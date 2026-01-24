@@ -2,3 +2,6 @@ target/
 .env
 *.key
 secrets/
+Cargo.lock
+credentials
+report.json

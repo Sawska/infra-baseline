@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   pull_request:
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -12,17 +15,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: rustfmt, clippy
-          override: true
 
-      - name: Format check
-        run: cargo fmt -- --check
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Lint
-        run: cargo clippy -- -D warnings
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
 
-      - name: Test
-        run: cargo test
+      - name: Lint (Clippy)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Build Workspace
+        run: cargo build --verbose
+
+      - name: Run Tests
+        run: cargo test --workspace
