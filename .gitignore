@@ -5,3 +5,4 @@ secrets/
 Cargo.lock
 credentials
 report.json
+.DS_store

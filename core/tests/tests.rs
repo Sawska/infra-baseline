@@ -142,3 +142,16 @@ fn test_error_display() {
     let err = ArbError::EnvVarMissing("PRIVATE_KEY".to_string());
     assert_eq!(err.to_string(), "Missing environment variable: PRIVATE_KEY");
 }
+
+#[test]
+fn test_serializer_determinism_stress_1000() {
+    let mut map = BTreeMap::new();
+    for i in 0..50 {
+        map.insert(format!("key_{}", i), i);
+    }
+
+    assert!(
+        CanonicalSerializer::verify_determinism(&map, 1000),
+        "CanonicalSerializer produced different outputs across 1000 iterations"
+    );
+}
