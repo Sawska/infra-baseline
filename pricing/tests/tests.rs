@@ -357,7 +357,7 @@ async fn test_pricing_engine_integration() {
         .await;
 
     match quote_res {
-        Ok(_) => assert!(true),
+        Ok(_) => {}
         Err(e) => {
             let msg = e.to_string();
             assert!(
