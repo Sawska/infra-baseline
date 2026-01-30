@@ -32,7 +32,6 @@ impl GasPrice {
 
 pub struct ChainClient {
     provider: Arc<RootProvider<Ethereum>>,
-    // Configuration for retries
     max_retries: u32,
     base_backoff_ms: u64,
 }

@@ -1,147 +1,211 @@
 # Arb Execution Engine
 
-A high-performance, modular execution engine for Ethereum arbitrage trading, written in Rust.
+A high-performance, modular execution and pricing engine for Ethereum arbitrage trading, written in Rust.
 
-This engine is designed with a focus on determinism, type safety, and reliability. It separates business logic from network interaction to ensure that signing and serialization remain secure and predictable, even in the event of network failures.
+The system is designed with a strong focus on determinism, type safety, and financial safety. Core business logic is strictly separated from network interaction, while the pricing engine implements exact AMM math and routing. Signing, serialization, simulation, and execution are all predictable and verifiable, even under network failure conditions.
+
+---
 
 ## Key Features
 
 ### Core (`arb-core`)
 
-- **Secure Wallet Management**
-  Loads keys from environment or encrypted keystores. Private keys are redacted from all debug logs and string representations.
+* **Secure Wallet Management**
+  Loads keys from environment variables or encrypted keystores.
+  Private keys are redacted from all debug logs and string representations.
 
-- **Deterministic Serialization**
-  Custom `CanonicalSerializer` that strictly sorts JSON keys and rejects floating point numbers to ensure consensus compatibility.
+* **Deterministic Serialization**
+  Custom `CanonicalSerializer` that strictly sorts JSON keys and rejects floating point numbers to guarantee consensus-compatible encoding.
 
-- **Strict Typing**
-  Custom `TokenAmount` and `Address` types to prevent precision loss and handle checksums automatically.
+* **Strict Typing**
+  Custom `TokenAmount`, `Address`, and related primitives to prevent precision loss and enforce checksum correctness.
+
+---
 
 ### Chain (`arb-chain`)
 
-- **Resilient RPC Client**
-  Automatic failover and retry logic. If the primary RPC node fails, the client seamlessly switches to backup providers.
+* **Resilient RPC Client**
+  Automatic retry and failover across multiple RPC providers. The client rotates immediately on errors or timeouts.
 
-- **Fluent Transaction Builder**
-  A type-safe builder pattern for estimating gas, managing nonces, and signing transactions
-  (`.to().value().send_and_wait()`).
+* **Fluent Transaction Builder**
+  Type-safe builder for gas estimation, nonce handling, signing, and broadcasting:
+  `.to().value().send_and_wait()`
 
-- **Transaction Analyzer CLI**
-  A standalone tool to dissect Mainnet transactions, decoding DeFi function calls (Uniswap, ERC20) and summarizing token swaps.
+* **Transaction Analyzer CLI**
+  Standalone tool for dissecting Ethereum Mainnet transactions, decoding DeFi calls (ERC20, Uniswap), and summarizing gas usage and token flows.
+
+---
+
+### Pricing Engine (`pricing`)
+
+* **Multi-Protocol AMM Math**
+  Unified interface for Uniswap V2 (constant product) and Uniswap V3 (concentrated liquidity).
+  Rust implementations exactly match Solidity integer math.
+
+* **Graph-Based Router**
+  Depth-first search (DFS) routing over AMM pool graphs to discover multi-hop paths and arbitrage cycles
+  (A → B → C → A).
+
+* **Mempool Monitor**
+  WebSocket-based monitoring of pending transactions and block logs to keep pool reserves updated in near real time.
+
+* **Fork Simulation**
+  Integrated fork-based simulation using Anvil. All candidate strategies are dry-run against real Mainnet state before execution to prevent reverts and unprofitable trades.
+
+---
 
 ## Architecture
 
-The project is organized as a Cargo workspace:
+The system follows a strict separation between data access, pricing logic, simulation, and execution:
+
+flowchart TD
+    RPC[RPC / WebSocket]
+
+    RPC --> MM[Mempool Monitor]
+    RPC --> CC[Chain Client]
+
+    MM -->|Events| PE[Pricing Engine]
+    CC -->|State Fetch| POOLS[AMM Pools<br/>(Uniswap V2 / V3)]
+
+    POOLS --> RF[Route Finder]
+    RF -->|Paths| PE
+
+    PE -->|Candidate Tx| FS[Fork Simulator]
+    FS -->|Successful Simulation| EE[Execution Engine]
+
+
+---
+
+## Workspace Structure
 
 ```
-
 arb-execution-engine/
 ├── core/       # Pure logic (Wallet, Types, Serialization). No network dependencies.
-├── chain/      # Network logic (RPC Client, Tx Builder, Analyzer). Depends on `core`.
+├── chain/      # Network logic (RPC Client, Tx Builder, Analyzer).
+├── pricing/    # AMM math, routing, simulation, price impact analysis.
 └── .env        # Configuration (Private Keys, RPC URLs)
+```
 
-````
+---
 
 ## Getting Started
 
 ### Prerequisites
 
-- Rust & Cargo (v1.70+)
-- An Ethereum Node RPC URL (Alchemy, Infura, or public node)
-- A Sepolia private key (for integration tests)
+* Rust & Cargo (v1.70+)
+* Ethereum RPC URL (Alchemy, Infura, or equivalent)
+* Foundry / Anvil (for Mainnet forking and simulation)
+* Sepolia private key (for live integration tests)
+
+---
 
 ### Installation
-
-Clone the repository:
 
 ```bash
 git clone https://github.com/yourusername/arb-execution-engine.git
 cd arb-execution-engine
-````
-
-Set up configuration:
-
-```bash
 cp .env_example .env
 ```
 
-Edit `.env` to include:
+Edit `.env` and provide:
 
 * `PRIVATE_KEY` (no `0x` prefix)
-* `SEPOLIA_RPC`
+* `RPC_URL` or `SEPOLIA_RPC`
 
-Build the project:
+Build the workspace:
 
 ```bash
 make build
 ```
 
+---
+
 ## Usage
 
-The project includes a `Makefile` for common tasks.
+### 1. Transaction Analyzer
 
-### 1. Run the Transaction Analyzer
-
-Analyze any Ethereum Mainnet transaction hash to see gas usage, function decoding, and token transfers.
+Analyze any Ethereum Mainnet transaction to inspect gas usage, decoded function calls, and token transfers.
 
 ```bash
-# Example: Analyze a Uniswap V2 Swap
 make run-analyzer
 ```
 
-Or run manually:
+Or manually:
 
 ```bash
 cargo run -p arb-chain --bin analyzer -- <TX_HASH>
 ```
 
-### 2. Run Live Integration Test (Sepolia)
+---
 
-This script performs a full lifecycle test on the Sepolia testnet:
+### 2. Price Impact Analyzer
+
+Analyze slippage and liquidity depth for Uniswap V2/V3 pools using local simulation.
+
+```bash
+cargo run -p pricing --bin impact_analyzer -- \
+  0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc \
+  --token-in USDC \
+  --sizes 1000,10000,100000 \
+  --rpc https://eth.merkle.io
+```
+
+---
+
+### 3. Local Mainnet Fork
+
+Start a local fork for simulation and strategy testing:
+
+```bash
+./scripts/start_fork.sh
+```
+
+---
+
+### 4. Live Integration Test (Sepolia)
+
+Performs a full lifecycle test:
 
 * Connects to RPC
 * Checks wallet balance
 * Builds and estimates a transaction
-* Signs and verifies the signature locally
-* Broadcasts to the network and waits for confirmation
+* Signs and verifies locally
+* Broadcasts and waits for confirmation
 
 ```bash
 make run-sepolia
 ```
 
-### 3. Run Test Suite
-
-Executes unit tests and local integration tests.
-
-```bash
-make test
-```
+---
 
 ## Testing Strategy
 
-We maintain a strict testing regime to ensure financial safety:
+Financial correctness is enforced through layered testing:
 
-* **Unit Tests (>15)**
-  Covers edge cases in `core`, including Unicode handling, large integer serialization, and gas math.
+* **Unit Tests**
+  Core logic, serialization edge cases, large integer math, and routing correctness.
+
+* **Math Verification**
+  Pricing tests validate Rust AMM math against historical Mainnet transactions for exact parity with Solidity.
+
+* **Simulation Tests**
+  Fork-based integration tests execute trades against real contract bytecode.
 
 * **Security Tests**
-  Automated checks ensure that `println!("{:?}", wallet)` never leaks secrets.
+  Automated checks ensure private keys never appear in logs or debug output.
 
-* **Local Integration**
-  `chain/tests/local_flow.rs` verifies the Builder → Signer → RLP encoding pipeline without hitting the network.
+---
 
-* **Live Integration**
-  `integration_test.rs` verifies end-to-end functionality on a testnet.
+## Design Decisions
 
-## 🛡️ Design Decisions
+* **Integer-Only Math**
+  Floating point math is banned across execution and pricing. All calculations use `U256` or normalized integer representations.
 
-* **No Floating Point Math**
-  Arbitrage relies on exact precision. `f64` is rejected in the `CanonicalSerializer`. All math uses `U256` or normalized decimal types.
+* **Simulation-First Execution**
+  No transaction is broadcast unless it succeeds in a forked simulation, reducing failed gas costs and MEV exposure.
 
-* **Failover Client**
-  Speed is critical. The `ChainClient` maintains multiple providers and immediately rotates on errors or timeouts.
+* **Core / IO Separation**
+  `core` contains no network dependencies, enabling fast CI and preventing logic bugs from being masked by RPC behavior.
 
-* **Workspace Structure**
-  Separating `core` (logic) from `chain` (IO) prevents circular dependencies and allows extremely fast logic tests in CI.
-
-```
+* **Failover by Default**
+  Network instability is assumed. RPC clients rotate providers automatically without impacting signing or serialization.

@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "chain"]
+members = ["core", "chain", "pricing"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -12,3 +12,4 @@ dotenvy = "0.15"
 
 arb-core = { path = "./core" }
 arb-chain = { path = "./chain" }
+pricing ={ path = "./pricing" }

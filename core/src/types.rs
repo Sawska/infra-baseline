@@ -13,6 +13,8 @@ use std::str::FromStr;
 pub struct Address(pub AlloyAddress);
 
 impl Address {
+    pub const ZERO: Self = Self(alloy_primitives::Address::ZERO);
+
     pub fn from_string(s: &str) -> Result<Self, ArbError> {
         s.parse::<AlloyAddress>()
             .map(Address)

@@ -122,7 +122,6 @@ impl Analyzer {
             chain_id: self.chain_id,
         };
 
-        // We use the client's retryable call
         let symbol = self
             .client
             .call(&req, None)
@@ -130,7 +129,6 @@ impl Analyzer {
             .ok()
             .and_then(|res| IERC20::symbolCall::abi_decode_returns(&res).ok())
             .unwrap_or_else(|| {
-                // Fallback to truncated address if symbol fails
                 format!(
                     "0x{:x}...",
                     u64::from_be_bytes(addr[0..8].try_into().unwrap_or([0; 8]))
@@ -160,7 +158,6 @@ impl Analyzer {
         let tx_val = tx_res?.context("Transaction not found on chain")?;
         let receipt = receipt_res?.context("Receipt not found on chain")?;
 
-        // Convert JSON value back to Alloy Transaction type
         let tx: Transaction =
             serde_json::from_value(tx_val).context("Failed to deserialize transaction")?;
 
@@ -190,7 +187,6 @@ impl Analyzer {
             return None;
         }
 
-        // Try decoding against known interfaces
         if let Ok(call) = IUniswapV3Router::IUniswapV3RouterCalls::abi_decode(data) {
             Some(format!("Uniswap V3: {:?}", call))
         } else if let Ok(call) = IUniswapV2Router::IUniswapV2RouterCalls::abi_decode(data) {
