@@ -57,7 +57,7 @@ The system is designed with a strong focus on determinism, type safety, and fina
 ## Architecture
 
 The system follows a strict separation between data access, pricing logic, simulation, and execution:
-
+```mermaid
 flowchart TD
     RPC[RPC / WebSocket]
 
@@ -65,14 +65,14 @@ flowchart TD
     RPC --> CC[Chain Client]
 
     MM -->|Events| PE[Pricing Engine]
-    CC -->|State Fetch| POOLS[AMM Pools<br/>(Uniswap V2 / V3)]
+    CC -->|State Fetch| POOLS[AMM Pools (Uniswap V2 / V3)]
 
     POOLS --> RF[Route Finder]
     RF -->|Paths| PE
 
     PE -->|Candidate Tx| FS[Fork Simulator]
     FS -->|Successful Simulation| EE[Execution Engine]
-
+```
 
 ---
 
