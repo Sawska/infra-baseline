@@ -58,20 +58,16 @@ The system is designed with a strong focus on determinism, type safety, and fina
 
 The system follows a strict separation between data access, pricing logic, simulation, and execution:
 ```mermaid
-flowchart TD
-    RPC[RPC / WebSocket]
+flowchart LR
+    AMM[amm.rs\nCore AMM Math]
 
-    RPC --> MM[Mempool Monitor]
-    RPC --> CC[Chain Client]
+    AMM --> ROUTER[router.rs]
+    AMM --> SIM[simulator.rs]
 
-    MM -->|Events| PE[Pricing Engine]
-    CC -->|State Fetch| POOLS[AMM Pools (Uniswap V2 / V3)]
+    ROUTER --> ENGINE[engine.rs]
+    SIM --> ENGINE
 
-    POOLS --> RF[Route Finder]
-    RF -->|Paths| PE
-
-    PE -->|Candidate Tx| FS[Fork Simulator]
-    FS -->|Successful Simulation| EE[Execution Engine]
+    MON[monitor.rs] --> ENGINE
 ```
 
 ---
