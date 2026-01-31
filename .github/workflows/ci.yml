@@ -30,5 +30,16 @@ jobs:
       - name: Build Workspace
         run: cargo build --verbose
 
+      - name: Run Anvil and Tests
+        env:
+          ETH_RPC_URL: ${{ secrets.ETH_RPC_URL }}
+        run: |
+          anvil --fork-url "$ETH_RPC_URL" --port 8545 &
+
+          until curl -s http://127.0.0.1:8545 > /dev/null; do
+            echo "Waiting for Anvil..."
+            sleep 1
+          done
+
       - name: Run Tests
         run: cargo test --workspace
