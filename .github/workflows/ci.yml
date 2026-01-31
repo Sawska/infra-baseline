@@ -34,12 +34,29 @@ jobs:
         env:
           ETH_RPC_URL: ${{ secrets.ETH_RPC_URL }}
         run: |
-          anvil --fork-url "$ETH_RPC_URL" --port 8545 &
+          anvil --fork-url "$ETH_RPC_URL" --port 8545 > anvil.log 2>&1 &
 
-          until curl -s http://127.0.0.1:8545 > /dev/null; do
-            echo "Waiting for Anvil..."
+          echo "Waiting for Anvil to boot..."
+          for i in {1..30}; do
+            if curl -s http://127.0.0.1:8545 > /dev/null; then
+              echo "Anvil is ready!"
+              break
+            fi
+
+            if ! kill -0 $! 2>/dev/null; then
+              echo "Error: Anvil process died unexpectedly. Logs:"
+              cat anvil.log
+              exit 1
+            fi
+
+            echo "Attempt $i: Still waiting..."
             sleep 1
+
+            if [ $i -eq 30 ]; then
+              echo "Timeout: Anvil failed to start in 30s. Logs:"
+              cat anvil.log
+              exit 1
+            fi
           done
 
-      - name: Run Tests
-        run: cargo test --workspace
+          cargo test --workspace

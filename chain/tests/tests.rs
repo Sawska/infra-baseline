@@ -25,7 +25,7 @@ async fn test_gas_price_calculation() {
 
 #[tokio::test]
 async fn test_builder_flow() {
-    let client = ChainClient::new("https://eth.llamarpc.com");
+    let client = ChainClient::new("http://127.0.0.1:8545");
     let (wallet, _) = WalletManager::generate();
     let recipient = Address::from_string("0x0000000000000000000000000000000000000000").unwrap();
 
