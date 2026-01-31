@@ -37,8 +37,7 @@ jobs:
         env:
           ETH_RPC_URL: ${{ secrets.ETH_RPC_URL }}
         run: |
-          anvil --fork-url "$ETH_RPC_URL" --port 8545 > anvil.log 2>&1 &
-
+          anvil --fork-url "$ETH_RPC_URL" --port 8545 --accounts 10 --balance 10000 > anvil.log 2>&1 &
           echo "Waiting for Anvil to boot..."
           for i in {1..30}; do
             if curl -s http://127.0.0.1:8545 > /dev/null; then
