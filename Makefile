@@ -26,6 +26,12 @@ run-impact-3:
   --sizes 2500 \
   --rpc https://eth.merkle.io
 
+run-router:
+	cargo run -p pricing --bin router_demo -- --pools 0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc,0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11 --token-in USDC --token-out DAI --amount 1000
+
+run-monitor:
+	cargo run -p pricing --bin monitor_demo
+
 run-sepolia:
 	cargo run -p arb-chain --bin integration_test
 

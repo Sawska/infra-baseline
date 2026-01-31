@@ -1,13 +1,12 @@
-use std::sync::Arc;
-
-use crate::amm::UniswapV2Pair;
+use crate::amm::{Pool, Token};
 use crate::router::Route;
 use alloy_network::Ethereum;
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{Address, U160, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_rpc_types::{TransactionInput, TransactionRequest};
 use alloy_sol_types::SolCall;
 use anyhow::{Result, anyhow};
+use std::sync::Arc;
 use url::Url;
 
 alloy_sol_types::sol! {
@@ -18,6 +17,20 @@ alloy_sol_types::sol! {
         address to,
         uint256 deadline
     ) external returns (uint256[] memory amounts);
+
+
+    struct ExactInputSingleParams {
+        address tokenIn;
+        address tokenOut;
+        uint24 fee;
+        address recipient;
+        uint256 deadline;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+        uint160 sqrtPriceLimitX96;
+    }
+
+    function exactInputSingle(ExactInputSingleParams calldata params) external payable returns (uint256 amountOut);
 }
 
 #[derive(Debug, Clone)]
@@ -52,25 +65,47 @@ impl ForkSimulator {
 
     /// Simulate a swap and return detailed results.
     /// Uses eth_call to get output and eth_estimateGas for gas usage.
-    pub async fn simulate_swap(
+    pub async fn simulate_pool_swap(
         &self,
+        pool: &Pool,
         router_address: Address,
         amount_in: U256,
-        path: Vec<Address>,
+        token_in: &Token,
         sender: Address,
     ) -> Result<SimulationResult> {
-        let deadline = U256::MAX;
-        let amount_out_min = U256::ZERO;
-
-        let call = swapExactTokensForTokensCall {
-            amountIn: amount_in,
-            amountOutMin: amount_out_min,
-            path: path.clone(),
-            to: sender,
-            deadline,
+        let (token0, token1) = pool.tokens();
+        let token_out = if token_in.address == token0.address {
+            token1
+        } else {
+            token0
         };
 
-        let calldata = call.abi_encode();
+        let calldata = match pool {
+            Pool::V2(_) => {
+                let path = vec![token_in.address.0, token_out.address.0];
+                swapExactTokensForTokensCall {
+                    amountIn: amount_in,
+                    amountOutMin: U256::ZERO,
+                    path,
+                    to: sender,
+                    deadline: U256::MAX,
+                }
+                .abi_encode()
+            }
+            Pool::V3(v3) => {
+                let params = ExactInputSingleParams {
+                    tokenIn: token_in.address.0,
+                    tokenOut: token_out.address.0,
+                    fee: alloy_primitives::Uint::from(v3.fee),
+                    recipient: sender,
+                    deadline: U256::MAX,
+                    amountIn: amount_in,
+                    amountOutMinimum: U256::ZERO,
+                    sqrtPriceLimitX96: U160::ZERO,
+                };
+                exactInputSingleCall { params }.abi_encode()
+            }
+        };
 
         let tx = TransactionRequest {
             from: Some(sender),
@@ -86,11 +121,10 @@ impl ForkSimulator {
                     success: false,
                     amount_out: U256::ZERO,
                     gas_used: 0,
-                    error: Some(e.to_string()),
+                    error: Some(format!("Gas estimation failed: {}", e)),
                 });
             }
         };
-
         let result_bytes = match self.provider.call(tx.clone()).await {
             Ok(bytes) => bytes,
             Err(e) => {
@@ -98,27 +132,39 @@ impl ForkSimulator {
                     success: false,
                     amount_out: U256::ZERO,
                     gas_used,
-                    error: Some(e.to_string()),
+                    error: Some(format!("Execution failed: {}", e)),
                 });
             }
         };
-
-        match swapExactTokensForTokensCall::abi_decode_returns(&result_bytes) {
-            Ok(return_val) => {
-                let amount_out = return_val.last().cloned().unwrap_or(U256::ZERO);
-                Ok(SimulationResult {
+        match pool {
+            Pool::V2(_) => match swapExactTokensForTokensCall::abi_decode_returns(&result_bytes) {
+                Ok(amounts) => Ok(SimulationResult {
+                    success: true,
+                    amount_out: *amounts.last().unwrap_or(&U256::ZERO),
+                    gas_used,
+                    error: None,
+                }),
+                Err(e) => Ok(SimulationResult {
+                    success: false,
+                    amount_out: U256::ZERO,
+                    gas_used,
+                    error: Some(format!("V2 decode error: {}", e)),
+                }),
+            },
+            Pool::V3(_) => match exactInputSingleCall::abi_decode_returns(&result_bytes) {
+                Ok(amount_out) => Ok(SimulationResult {
                     success: true,
                     amount_out,
                     gas_used,
                     error: None,
-                })
-            }
-            Err(e) => Ok(SimulationResult {
-                success: false,
-                amount_out: U256::ZERO,
-                gas_used,
-                error: Some(format!("Decoding error: {}", e)),
-            }),
+                }),
+                Err(e) => Ok(SimulationResult {
+                    success: false,
+                    amount_out: U256::ZERO,
+                    gas_used,
+                    error: Some(format!("V3 decode error: {}", e)),
+                }),
+            },
         }
     }
 
@@ -131,27 +177,64 @@ impl ForkSimulator {
         sender: Address,
     ) -> Result<SimulationResult> {
         let path: Vec<Address> = route.path.iter().map(|t| t.address.0).collect();
-        self.simulate_swap(router_address, amount_in, path, sender)
+        self.simulate_v2_swap(router_address, amount_in, path, sender)
             .await
+    }
+    async fn simulate_v2_swap(
+        &self,
+        router_address: Address,
+        amount_in: U256,
+        path: Vec<Address>,
+        sender: Address,
+    ) -> Result<SimulationResult> {
+        let call = swapExactTokensForTokensCall {
+            amountIn: amount_in,
+            amountOutMin: U256::ZERO,
+            path,
+            to: sender,
+            deadline: U256::MAX,
+        };
+
+        let tx = TransactionRequest {
+            from: Some(sender),
+            to: Some(alloy_primitives::TxKind::Call(router_address)),
+            input: TransactionInput::new(call.abi_encode().into()),
+            ..Default::default()
+        };
+
+        let gas_used = self.provider.estimate_gas(tx.clone()).await.unwrap_or(0);
+        let result_bytes = self.provider.call(tx).await?;
+
+        match swapExactTokensForTokensCall::abi_decode_returns(&result_bytes) {
+            Ok(res) => Ok(SimulationResult {
+                success: true,
+                amount_out: *res.last().unwrap_or(&U256::ZERO),
+                gas_used,
+                error: None,
+            }),
+            Err(e) => Ok(SimulationResult {
+                success: false,
+                amount_out: U256::ZERO,
+                gas_used,
+                error: Some(e.to_string()),
+            }),
+        }
     }
 
     /// Compare our AMM math vs actual fork simulation.
     /// Useful for validation.
     pub async fn compare_simulation_vs_calculation(
         &self,
-        pair: &UniswapV2Pair,
+        pool: &Pool,
         router_address: Address,
         amount_in: U256,
+        token_in: &Token,
         sender: Address,
     ) -> Result<ComparisonResult> {
-        let token_in = &pair.token0;
-        let token_out = &pair.token1;
+        let calculated = pool.get_amount_out(amount_in, token_in)?;
 
-        let calculated = pair.get_amount_out(amount_in, token_in)?;
-
-        let path = vec![token_in.address.0, token_out.address.0];
         let sim_result = self
-            .simulate_swap(router_address, amount_in, path, sender)
+            .simulate_pool_swap(pool, router_address, amount_in, token_in, sender)
             .await?;
 
         if !sim_result.success {
@@ -161,17 +244,18 @@ impl ForkSimulator {
             ));
         }
 
-        let diff = if calculated > sim_result.amount_out {
-            calculated - sim_result.amount_out
+        let simulated = sim_result.amount_out;
+        let diff = if calculated > simulated {
+            calculated - simulated
         } else {
-            sim_result.amount_out - calculated
+            simulated - calculated
         };
 
         Ok(ComparisonResult {
             calculated,
-            simulated: sim_result.amount_out,
+            simulated,
             difference: diff,
-            matches: calculated == sim_result.amount_out,
+            matches: calculated == simulated,
         })
     }
 }

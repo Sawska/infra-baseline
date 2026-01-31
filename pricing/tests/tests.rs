@@ -294,12 +294,11 @@ fn test_mempool_parsing_handles_malformed() {
 
 #[tokio::test]
 async fn test_simulation_matches_calculation() {
-    let fork_url = std::env::var("FORK_URL").unwrap_or_default();
+    let fork_url = std::env::var("RPC_URL_LOCAL").unwrap_or_default();
     if fork_url.is_empty() {
-        println!("Skipping simulation test: FORK_URL not set");
+        println!("Skipping simulation test: RPC_URL_LOCAL not set");
         return;
     }
-
     let simulator = ForkSimulator::new(&fork_url).expect("Failed to create simulator");
 
     let token_in = make_token(1, "WETH");
@@ -311,18 +310,31 @@ async fn test_simulation_matches_calculation() {
     let amount_in = U256::from(1000);
 
     let result = simulator
-        .compare_simulation_vs_calculation(&pair, router_addr.0, amount_in, sender.0)
-        .await;
+        .compare_simulation_vs_calculation(
+            &Pool::V2(pair),
+            router_addr.0,
+            amount_in,
+            &token_in,
+            sender.0,
+        )
+        .await
+        .expect("Simulation vs Calculation comparison failed to execute");
 
     assert!(
-        result.is_ok() || result.is_err(),
-        "Comparison logic should execute"
+        result.matches,
+        "Calculation ({}) did not match Simulation ({}). Difference: {}",
+        result.calculated, result.simulated, result.difference
+    );
+
+    assert!(
+        result.difference < U256::from(1),
+        "Difference exceeds tolerance"
     );
 }
 
 #[tokio::test]
 async fn test_pricing_engine_integration() {
-    let fork_url = std::env::var("FORK_URL").unwrap_or_default();
+    let fork_url = std::env::var("RPC_URL_LOCAL").unwrap_or_default();
 
     let client = Arc::new(ChainClient::new("http://localhost:8545"));
 
@@ -423,7 +435,7 @@ fn test_arbitrage_detection() {
 
 #[tokio::test]
 async fn test_engine_arbitrage_scan() {
-    let fork_url = std::env::var("FORK_URL").unwrap_or_default();
+    let fork_url = std::env::var("RPC_URL_LOCAL").unwrap_or_default();
 
     let client = Arc::new(ChainClient::new("http://localhost:8545"));
 
