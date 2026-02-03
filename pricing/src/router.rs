@@ -2,7 +2,7 @@
 #![allow(clippy::too_many_arguments)]
 use crate::amm::{Pool, Token};
 use alloy_primitives::U256;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use arb_core::Address;
 use std::collections::{HashMap, HashSet};
 

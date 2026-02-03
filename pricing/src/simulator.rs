@@ -5,7 +5,7 @@ use alloy_primitives::{Address, U160, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_rpc_types::{TransactionInput, TransactionRequest};
 use alloy_sol_types::SolCall;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use std::sync::Arc;
 use url::Url;
 
@@ -31,6 +31,8 @@ alloy_sol_types::sol! {
     }
 
     function exactInputSingle(ExactInputSingleParams calldata params) external payable returns (uint256 amountOut);
+    function getReserves() external view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast);
+    function getAmountOut(uint amountIn, uint reserveIn, uint reserveOut) external pure returns (uint amountOut);
 }
 
 #[derive(Debug, Clone)]
@@ -257,5 +259,44 @@ impl ForkSimulator {
             difference: diff,
             matches: calculated == simulated,
         })
+    }
+
+    pub async fn get_v2_reserves(&self, pair_address: Address) -> Result<(U256, U256)> {
+        let call = getReservesCall {};
+        let tx = TransactionRequest {
+            to: Some(alloy_primitives::TxKind::Call(pair_address)),
+            input: TransactionInput::new(call.abi_encode().into()),
+            ..Default::default()
+        };
+
+        let result_bytes = self.provider.call(tx).await?;
+        let decoded = getReservesCall::abi_decode_returns(&result_bytes)?;
+
+        Ok((U256::from(decoded.reserve0), U256::from(decoded.reserve1)))
+    }
+
+    /// Calls the official Uniswap V2 Router math logic on-chain
+    pub async fn call_uniswap_v2_get_amount_out(
+        &self,
+        router_address: Address,
+        amount_in: U256,
+        reserve_in: U256,
+        reserve_out: U256,
+    ) -> Result<U256> {
+        let call = getAmountOutCall {
+            amountIn: amount_in,
+            reserveIn: reserve_in,
+            reserveOut: reserve_out,
+        };
+        let tx = TransactionRequest {
+            to: Some(alloy_primitives::TxKind::Call(router_address)),
+            input: TransactionInput::new(call.abi_encode().into()),
+            ..Default::default()
+        };
+
+        let result_bytes = self.provider.call(tx).await?;
+        let decoded = getAmountOutCall::abi_decode_returns(&result_bytes)?;
+
+        Ok(decoded)
     }
 }

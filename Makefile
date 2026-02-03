@@ -1,4 +1,4 @@
-.PHONY: run-analyzer run-impact run-sepolia test lint clean build
+.PHONY: fmt run-analyzer run-impact run-sepolia test lint clean build
 
 run-analyzer:
 	cargo run --bin analyzer 0x6a45c9efcf942a48ba0e26441cf9db7f2ae6cc5f9731d3c7b7fc31692ab3cec0 --json
@@ -27,7 +27,9 @@ run-impact-3:
   --rpc https://eth.merkle.io
 
 run-router:
-	cargo run -p pricing --bin router_demo -- --pools 0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc,0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11 --token-in USDC --token-out DAI --amount 1000
+	cargo run -p pricing --bin router_demo -- \
+	--pools 0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc,0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11,0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852 \
+	--token-in USDC --token-out USDT --amount 1000
 
 run-monitor:
 	cargo run -p pricing --bin monitor_demo
@@ -39,8 +41,8 @@ test:
 	cargo test
 
 lint:
-	cargo fmt -- --check
-	cargo clippy -- -D warnings
+	cargo fmt --all -- --check
+	cargo clippy --workspace -- -D warnings
 
 build:
 	cargo build
@@ -53,6 +55,9 @@ password:
 
 docs:
 	cargo doc --no-deps --all-features
+
+fmt:
+	cargo fmt --all
 
 open-docs:
 	cargo doc --no-deps --all-features --open

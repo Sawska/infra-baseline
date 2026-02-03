@@ -1,7 +1,7 @@
-use alloy_primitives::{Bytes, U256};
+use alloy_primitives::{map::HashMap, Bytes, U256};
 use alloy_rpc_types::BlockNumberOrTag;
 use alloy_sol_types::SolCall;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use arb_chain::ChainClient;
 use arb_core::{Address, TokenAmount, TransactionRequest};
 use rust_decimal::prelude::*;
@@ -325,6 +325,13 @@ impl UniswapV2Pair {
     }
 }
 
+/// Simplified Tick Data structure for V3
+#[derive(Clone, Debug, Default)]
+pub struct TickData {
+    pub liquidity_net: i128,
+    pub liquidity_gross: u128,
+}
+
 /// Represents a Uniswap V3 concentrated liquidity pool.
 /// Handles simplified single-tick math for pricing.
 #[derive(Clone, Debug)]
@@ -336,9 +343,12 @@ pub struct UniswapV3Pool {
     pub sqrt_price_x96: U256,
     pub tick: i32,
     pub fee: u32,
+    pub tick_spacing: i32,
+    pub ticks: HashMap<i32, TickData>,
 }
 
 impl UniswapV3Pool {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         address: Address,
         token0: Token,
@@ -347,6 +357,7 @@ impl UniswapV3Pool {
         sqrt_price_x96: U256,
         tick: i32,
         fee: u32,
+        tick_spacing: i32,
     ) -> Self {
         Self {
             address,
@@ -356,6 +367,8 @@ impl UniswapV3Pool {
             sqrt_price_x96,
             tick,
             fee,
+            tick_spacing,
+            ticks: HashMap::default(),
         }
     }
 
@@ -368,70 +381,76 @@ impl UniswapV3Pool {
 
         let zero_for_one = token_in.address == self.token0.address;
 
-        let fee_pips = self.fee;
+        let mut state = {
+            let amount_specified = amount_in.to::<i128>();
+            SwapState {
+                amount_specified_remaining: amount_specified,
+                amount_calculated: 0,
+                sqrt_price_x96: self.sqrt_price_x96,
+                tick: self.tick,
+                liquidity: self.liquidity,
+            }
+        };
 
-        let amount_in_with_fee = amount_in
-            .checked_mul(U256::from(1_000_000 - fee_pips))
-            .ok_or(anyhow!("Overflow calculating fee"))?
-            .checked_div(U256::from(1_000_000))
-            .ok_or(anyhow!("Division failed"))?;
+        while state.amount_specified_remaining > 0 {
+            let mut step = StepComputations {
+                _sqrt_price_start_x96: state.sqrt_price_x96,
+                ..Default::default()
+            };
 
-        let liquidity = U256::from(self.liquidity);
-        let sqrt_p = self.sqrt_price_x96;
-        let q96 = U256::from(1) << 96;
+            let (next_tick, initialized) = self.get_next_tick(state.tick, zero_for_one);
+            step.tick_next = next_tick;
 
-        if zero_for_one {
-            let numerator = liquidity
-                .checked_mul(sqrt_p)
-                .ok_or(anyhow!("Overflow 1"))?
-                .checked_mul(q96)
-                .ok_or(anyhow!("Overflow 2"))?;
-            let term2 = amount_in_with_fee
-                .checked_mul(sqrt_p)
-                .ok_or(anyhow!("Overflow 3"))?;
-            let denominator = liquidity
-                .checked_mul(q96)
-                .ok_or(anyhow!("Overflow 4"))?
-                .checked_add(term2)
-                .ok_or(anyhow!("Overflow 5"))?;
+            step.sqrt_price_next_x96 = self.get_sqrt_ratio_at_tick(step.tick_next)?;
 
-            let sqrt_p_next = numerator
-                .checked_div(denominator)
-                .ok_or(anyhow!("Div failed"))?;
+            let (sqrt_price_next_x96, amount_in_step, amount_out_step, fee_amount) = self
+                .compute_swap_step(
+                    state.sqrt_price_x96,
+                    step.sqrt_price_next_x96,
+                    state.liquidity,
+                    state.amount_specified_remaining,
+                    self.fee,
+                )?;
 
-            let diff = sqrt_p
-                .checked_sub(sqrt_p_next)
-                .ok_or(anyhow!("Price movement underflow"))?;
-            let dy = liquidity
-                .checked_mul(diff)
-                .ok_or(anyhow!("Overflow 6"))?
-                .checked_div(q96)
-                .ok_or(anyhow!("Div failed"))?;
+            state.sqrt_price_x96 = sqrt_price_next_x96;
+            state.amount_specified_remaining -= (amount_in_step + fee_amount) as i128;
+            state.amount_calculated += amount_out_step as i128;
 
-            Ok(dy)
-        } else {
-            let term = amount_in_with_fee
-                .checked_mul(q96)
-                .ok_or(anyhow!("Overflow 1"))?
-                .checked_div(liquidity)
-                .ok_or(anyhow!("Div failed"))?;
-            let sqrt_p_next = sqrt_p.checked_add(term).ok_or(anyhow!("Overflow 2"))?;
+            // 4. If we reached the next initialized tick, cross it
+            if state.sqrt_price_x96 == step.sqrt_price_next_x96 && initialized {
+                let tick_data = self.ticks.get(&step.tick_next).cloned().unwrap_or_default();
 
-            let diff = sqrt_p_next
-                .checked_sub(sqrt_p)
-                .ok_or(anyhow!("Price movement underflow"))?;
-            let num = liquidity
-                .checked_mul(q96)
-                .ok_or(anyhow!("Overflow 3"))?
-                .checked_mul(diff)
-                .ok_or(anyhow!("Overflow 4"))?;
-            let den = sqrt_p
-                .checked_mul(sqrt_p_next)
-                .ok_or(anyhow!("Overflow 5"))?;
-
-            let dx = num.checked_div(den).ok_or(anyhow!("Div failed"))?;
-            Ok(dx)
+                if zero_for_one {
+                    state.liquidity = if tick_data.liquidity_net < 0 {
+                        state
+                            .liquidity
+                            .saturating_sub(tick_data.liquidity_net.unsigned_abs())
+                    } else {
+                        state
+                            .liquidity
+                            .checked_add(tick_data.liquidity_net as u128)
+                            .unwrap_or(state.liquidity)
+                    };
+                    state.tick = step.tick_next - 1;
+                } else {
+                    state.liquidity = if tick_data.liquidity_net < 0 {
+                        state
+                            .liquidity
+                            .saturating_sub(tick_data.liquidity_net.unsigned_abs())
+                    } else {
+                        state
+                            .liquidity
+                            .checked_add(tick_data.liquidity_net as u128)
+                            .unwrap_or(state.liquidity)
+                    };
+                    state.tick = step.tick_next;
+                }
+            } else {
+                state.tick = self.get_tick_at_sqrt_ratio(state.sqrt_price_x96)?;
+            }
         }
+
+        Ok(U256::from(state.amount_calculated))
     }
 
     pub fn get_spot_price(&self, token_in: &Token) -> Result<Decimal> {
@@ -496,6 +515,162 @@ impl UniswapV3Pool {
         d / multiplier
     }
 
+    fn get_next_tick(&self, current_tick: i32, zero_for_one: bool) -> (i32, bool) {
+        let mut initialized_ticks: Vec<i32> = self.ticks.keys().cloned().collect();
+        initialized_ticks.sort();
+
+        if zero_for_one {
+            let found = initialized_ticks.iter().rev().find(|&&t| t <= current_tick);
+            match found {
+                Some(&t) => (t, true),
+                None => (-887272, false),
+            }
+        } else {
+            let found = initialized_ticks.iter().find(|&&t| t > current_tick);
+            match found {
+                Some(&t) => (t, true),
+                None => (887272, false),
+            }
+        }
+    }
+
+    /// Simplified V3 step math.
+    fn compute_swap_step(
+        &self,
+        sqrt_p_start: U256,
+        sqrt_p_target: U256,
+        liquidity: u128,
+        amount_remaining: i128,
+        fee_pips: u32,
+    ) -> Result<(U256, u128, u128, u128)> {
+        let zero_for_one = sqrt_p_start >= sqrt_p_target;
+        let amount_remaining_less_fee =
+            (amount_remaining as u128 * (1_000_000 - fee_pips as u128)) / 1_000_000;
+
+        let liquidity_u256 = U256::from(liquidity);
+        let q96 = U256::from(1) << 96;
+
+        let amount_in_max = if zero_for_one {
+            let num = liquidity_u256
+                .checked_mul(
+                    sqrt_p_start
+                        .checked_sub(sqrt_p_target)
+                        .unwrap_or(U256::ZERO),
+                )
+                .unwrap_or(U256::ZERO)
+                .checked_mul(q96)
+                .unwrap_or(U256::ZERO);
+            let den = sqrt_p_start
+                .checked_mul(sqrt_p_target)
+                .unwrap_or(U256::from(1));
+            num / den
+        } else {
+            liquidity_u256
+                .checked_mul(
+                    sqrt_p_target
+                        .checked_sub(sqrt_p_start)
+                        .unwrap_or(U256::ZERO),
+                )
+                .unwrap_or(U256::ZERO)
+                / q96
+        };
+
+        if amount_remaining_less_fee >= amount_in_max.to::<u128>() {
+            let amount_out = if zero_for_one {
+                liquidity_u256
+                    .checked_mul(
+                        sqrt_p_start
+                            .checked_sub(sqrt_p_target)
+                            .unwrap_or(U256::ZERO),
+                    )
+                    .unwrap_or(U256::ZERO)
+                    / q96
+            } else {
+                let num = liquidity_u256
+                    .checked_mul(
+                        sqrt_p_target
+                            .checked_sub(sqrt_p_start)
+                            .unwrap_or(U256::ZERO),
+                    )
+                    .unwrap_or(U256::ZERO)
+                    .checked_mul(q96)
+                    .unwrap_or(U256::ZERO);
+                let den = sqrt_p_start
+                    .checked_mul(sqrt_p_target)
+                    .unwrap_or(U256::from(1));
+                num / den
+            };
+            let fee = (amount_in_max.to::<u128>() * fee_pips as u128).div_ceil(1_000_000);
+            Ok((
+                sqrt_p_target,
+                amount_in_max.to::<u128>(),
+                amount_out.to::<u128>(),
+                fee,
+            ))
+        } else {
+            let sqrt_p_next = if zero_for_one {
+                let num = liquidity_u256
+                    .checked_mul(sqrt_p_start)
+                    .unwrap()
+                    .checked_mul(q96)
+                    .unwrap();
+                let den = liquidity_u256
+                    .checked_mul(q96)
+                    .unwrap()
+                    .checked_add(
+                        U256::from(amount_remaining_less_fee)
+                            .checked_mul(sqrt_p_start)
+                            .unwrap(),
+                    )
+                    .unwrap();
+                num / den
+            } else {
+                sqrt_p_start
+                    + (U256::from(amount_remaining_less_fee)
+                        .checked_mul(q96)
+                        .unwrap()
+                        / liquidity_u256)
+            };
+
+            let amount_out = if zero_for_one {
+                liquidity_u256
+                    .checked_mul(sqrt_p_start.checked_sub(sqrt_p_next).unwrap())
+                    .unwrap()
+                    / q96
+            } else {
+                let num = liquidity_u256
+                    .checked_mul(sqrt_p_next.checked_sub(sqrt_p_start).unwrap())
+                    .unwrap()
+                    .checked_mul(q96)
+                    .unwrap();
+                let den = sqrt_p_start.checked_mul(sqrt_p_next).unwrap();
+                num / den
+            };
+
+            Ok((
+                sqrt_p_next,
+                amount_remaining_less_fee,
+                amount_out.to::<u128>(),
+                (amount_remaining as u128 - amount_remaining_less_fee),
+            ))
+        }
+    }
+
+    /// TickMath: get sqrt ratio at tick.
+    fn get_sqrt_ratio_at_tick(&self, tick: i32) -> Result<U256> {
+        let ratio = 1.0001f64.powi(tick).sqrt();
+        let q96 = 2.0f64.powi(96);
+        let val = (ratio * q96) as u128;
+        Ok(U256::from(val))
+    }
+
+    fn get_tick_at_sqrt_ratio(&self, sqrt_p: U256) -> Result<i32> {
+        let q96 = 2.0f64.powi(96);
+        let ratio = (sqrt_p.to::<u128>() as f64) / q96;
+        let tick = (ratio.powi(2).ln() / 1.0001f64.ln()).round() as i32;
+        Ok(tick)
+    }
+
     /// Fetch V3 pool data from on-chain.
     pub async fn from_chain(
         address: Address,
@@ -508,62 +683,89 @@ impl UniswapV3Pool {
             function liquidity() external view returns (uint128);
             function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked);
             function fee() external view returns (uint24);
+            function tickSpacing() external view returns (int24);
         }
+        let b = block.map(BlockNumberOrTag::Number);
+        let t0 = Address(token0Call::abi_decode_returns(
+            &client
+                .call(
+                    &UniswapV2Pair::make_req(address, token0Call {}.abi_encode()),
+                    b,
+                )
+                .await?,
+        )?);
+        let t1 = Address(token1Call::abi_decode_returns(
+            &client
+                .call(
+                    &UniswapV2Pair::make_req(address, token1Call {}.abi_encode()),
+                    b,
+                )
+                .await?,
+        )?);
+        let token0 = UniswapV2Pair::fetch_token_details(t0, client, b).await?;
+        let token1 = UniswapV2Pair::fetch_token_details(t1, client, b).await?;
 
-        let block_tag = block.map(BlockNumberOrTag::Number);
+        let liq = liquidityCall::abi_decode_returns(
+            &client
+                .call(
+                    &UniswapV2Pair::make_req(address, liquidityCall {}.abi_encode()),
+                    b,
+                )
+                .await?,
+        )?;
+        let s0 = slot0Call::abi_decode_returns(
+            &client
+                .call(
+                    &UniswapV2Pair::make_req(address, slot0Call {}.abi_encode()),
+                    b,
+                )
+                .await?,
+        )?;
+        let fee = feeCall::abi_decode_returns(
+            &client
+                .call(
+                    &UniswapV2Pair::make_req(address, feeCall {}.abi_encode()),
+                    b,
+                )
+                .await?,
+        )?;
+        let ts = tickSpacingCall::abi_decode_returns(
+            &client
+                .call(
+                    &UniswapV2Pair::make_req(address, tickSpacingCall {}.abi_encode()),
+                    b,
+                )
+                .await?,
+        )?;
 
-        let t0_req = UniswapV2Pair::make_req(address, token0Call {}.abi_encode());
-        let t0_res = client
-            .call(&t0_req, block_tag)
-            .await
-            .context("Failed to fetch token0")?;
-        let t0_raw = token0Call::abi_decode_returns(&t0_res)?;
-        let t0_addr = Address(t0_raw);
-
-        let t1_req = UniswapV2Pair::make_req(address, token1Call {}.abi_encode());
-        let t1_res = client
-            .call(&t1_req, block_tag)
-            .await
-            .context("Failed to fetch token1")?;
-        let t1_raw = token1Call::abi_decode_returns(&t1_res)?;
-        let t1_addr = Address(t1_raw);
-
-        let token0 = UniswapV2Pair::fetch_token_details(t0_addr, client, block_tag).await?;
-        let token1 = UniswapV2Pair::fetch_token_details(t1_addr, client, block_tag).await?;
-
-        let liq_req = UniswapV2Pair::make_req(address, liquidityCall {}.abi_encode());
-        let liq_res = client
-            .call(&liq_req, block_tag)
-            .await
-            .context("Failed to fetch liquidity")?;
-        let liquidity = liquidityCall::abi_decode_returns(&liq_res)?;
-
-        let s0_req = UniswapV2Pair::make_req(address, slot0Call {}.abi_encode());
-        let s0_res = client
-            .call(&s0_req, block_tag)
-            .await
-            .context("Failed to fetch slot0")?;
-        let slot0 = slot0Call::abi_decode_returns(&s0_res)?;
-        let sqrt_price_x96 = U256::from(slot0.sqrtPriceX96);
-        let tick = slot0.tick.as_i32();
-
-        let fee_req = UniswapV2Pair::make_req(address, feeCall {}.abi_encode());
-        let fee_res = client
-            .call(&fee_req, block_tag)
-            .await
-            .context("Failed to fetch fee")?;
-        let fee = feeCall::abi_decode_returns(&fee_res)?;
-
-        Ok(Self::new(
+        let pool = Self::new(
             address,
             token0,
             token1,
-            liquidity,
-            sqrt_price_x96,
-            tick,
+            liq,
+            U256::from(s0.sqrtPriceX96),
+            s0.tick.as_i32(),
             fee.to::<u32>(),
-        ))
+            ts.as_i32(),
+        );
+
+        Ok(pool)
     }
+}
+
+struct SwapState {
+    amount_specified_remaining: i128,
+    amount_calculated: i128,
+    sqrt_price_x96: U256,
+    tick: i32,
+    liquidity: u128,
+}
+
+#[derive(Default)]
+struct StepComputations {
+    _sqrt_price_start_x96: U256,
+    tick_next: i32,
+    sqrt_price_next_x96: U256,
 }
 
 #[derive(Clone, Debug)]

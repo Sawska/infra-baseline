@@ -1,6 +1,6 @@
 #![allow(clippy::collapsible_if)]
 use alloy_primitives::{Address, B256, U256};
-use alloy_provider::{Provider, ProviderBuilder, WsConnect, network::TransactionResponse};
+use alloy_provider::{network::TransactionResponse, Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types::{Filter, Transaction, TransactionTrait};
 use alloy_sol_types::{SolCall, SolEvent};
 use anyhow::Result;

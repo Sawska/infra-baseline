@@ -397,6 +397,7 @@ fn test_uniswap_v3_math() {
         sqrt_price_x96,
         0,
         3000,
+        60,
     );
 
     let amount_in = U256::from(1000);
@@ -527,6 +528,7 @@ fn test_v3_swap_direction_inverses() {
         sqrt_price_x96,
         0,
         3000,
+        60,
     );
 
     let amount_in = U256::from(10_000);
@@ -564,4 +566,51 @@ fn test_zero_input_handling() {
     if let Ok((_, val)) = result {
         assert_eq!(val, U256::ZERO);
     }
+}
+
+#[tokio::test]
+async fn test_matches_uniswap_v2_exact_on_chain() {
+    let fork_url = std::env::var("RPC_URL_LOCAL").unwrap_or_default();
+    if fork_url.is_empty() {
+        println!("Skipping Uniswap exact match test: RPC_URL_LOCAL not set");
+        return;
+    }
+
+    let simulator = ForkSimulator::new(&fork_url).expect("Failed to create simulator");
+
+    let pair_address: Address =
+        Address::from_string("0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc").unwrap();
+    let router_address =
+        Address::from_string("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap();
+    let token_eth = make_token(1, "WETH");
+    let token_usdc = Token::new(make_addr(2), 6, "USDC".to_string());
+
+    let (r0, r1) = simulator
+        .get_v2_reserves(pair_address.0)
+        .await
+        .expect("Failed to fetch on-chain reserves");
+
+    let pair_model = UniswapV2Pair::new(
+        pair_address,
+        token_eth.clone(),
+        token_usdc.clone(),
+        r0,
+        r1,
+        30,
+    );
+
+    let amount_in = U256::from(1) * U256::from(10).pow(U256::from(18)); // 1 ETH
+
+    let local_output = pair_model.get_amount_out(amount_in, &token_eth).unwrap();
+
+    let chain_output = simulator
+        .call_uniswap_v2_get_amount_out(router_address.0, amount_in, r0, r1)
+        .await
+        .expect("Failed to call Uniswap on-chain");
+
+    assert_eq!(
+        local_output, chain_output,
+        "Local math (result: {}) must match Uniswap V2 Solidity (result: {}) exactly",
+        local_output, chain_output
+    );
 }
