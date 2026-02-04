@@ -7,7 +7,7 @@ authors.workspace = true
 [dependencies]
 arb-core = { path = "../core" }
 pricing = { path = "../pricing" }
-rust_decimal = { version = "1.33", features = ["serde", "maths"] }
+rust_decimal = { version = "1.0", features = ["serde", "maths"] }
 serde.workspace = true
 chrono.workspace = true
 tokio.workspace = true
