@@ -127,7 +127,7 @@ where
             Venue::Wallet,
             &token_in.symbol,
             size,
-            Venue::Binance,
+            Venue::Cex,
             &token_out.symbol,
             size * cex_ask,
         );

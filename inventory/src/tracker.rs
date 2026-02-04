@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Venue {
-    Binance,
+    Cex,
     Wallet,
 }
 
@@ -34,7 +34,7 @@ pub struct InventoryTracker {
 impl InventoryTracker {
     pub fn new(wallet: Option<&WalletManager>) -> Self {
         let mut venues = HashMap::new();
-        venues.insert(Venue::Binance, HashMap::new());
+        venues.insert(Venue::Cex, HashMap::new());
         venues.insert(Venue::Wallet, HashMap::new());
 
         Self {

@@ -73,7 +73,7 @@ async fn main() -> Result<()> {
         .expect("Failed to create exchange client");
 
     let mut tracker = InventoryTracker::new(None);
-    tracker.update_from_cex(Venue::Binance, {
+    tracker.update_from_cex(Venue::Cex, {
         let mut m = std::collections::HashMap::new();
         m.insert("ETH".to_string(), (dec!(8.0), dec!(0.0)));
         m.insert("USDT".to_string(), (dec!(15000.0), dec!(0.0)));
@@ -143,9 +143,7 @@ async fn main() -> Result<()> {
             let wallet_usdt = checker
                 .inventory_tracker
                 .get_available(Venue::Wallet, "USDT");
-            let binance_eth = checker
-                .inventory_tracker
-                .get_available(Venue::Binance, "ETH");
+            let binance_eth = checker.inventory_tracker.get_available(Venue::Cex, "ETH");
             println!(
                 "  Wallet USDT:  {:<6} (need ~{:.0}) ✅",
                 wallet_usdt,

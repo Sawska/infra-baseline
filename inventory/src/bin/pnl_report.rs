@@ -10,7 +10,7 @@ fn main() {
     let show_chart = args.contains(&"--chart".to_string());
 
     let mut engine = PnLEngine::new();
-    let v_bin = Venue::Binance;
+    let v_bin = Venue::Cex;
     let v_uni = Venue::Wallet;
 
     for i in 0..25 {

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::fs;
 
 fn create_mock_trade(buy_price: Decimal, sell_price: Decimal, amount: Decimal) -> ArbRecord {
-    let v_bin = Venue::Binance;
+    let v_bin = Venue::Cex;
     let v_uni = Venue::Wallet;
 
     let buy = TradeLeg {
@@ -55,7 +55,7 @@ fn test_snapshot_aggregates_across_venues() {
 
     let mut binance_balances = HashMap::new();
     binance_balances.insert("ETH".to_string(), (dec!(10.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, binance_balances);
+    tracker.update_from_cex(Venue::Cex, binance_balances);
 
     let wallet_balances =
         vec![TokenAmount::from_human("5.0", 18, Some("ETH".to_string())).unwrap()];
@@ -76,13 +76,13 @@ fn test_can_execute_passes_when_sufficient() {
 
     let mut cex_bal = HashMap::new();
     cex_bal.insert("USDT".to_string(), (dec!(1000.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, cex_bal);
+    tracker.update_from_cex(Venue::Cex, cex_bal);
 
     let wallet_bal = vec![TokenAmount::from_human("1.0", 18, Some("ETH".to_string())).unwrap()];
     tracker.update_from_wallet(wallet_bal);
 
     let result = tracker.can_execute(
-        Venue::Binance,
+        Venue::Cex,
         "USDT",
         dec!(500.0),
         Venue::Wallet,
@@ -100,13 +100,13 @@ fn test_can_execute_fails_insufficient_buy() {
 
     let mut cex_bal = HashMap::new();
     cex_bal.insert("USDT".to_string(), (dec!(100.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, cex_bal);
+    tracker.update_from_cex(Venue::Cex, cex_bal);
 
     let wallet_bal = vec![TokenAmount::from_human("10.0", 18, Some("ETH".to_string())).unwrap()];
     tracker.update_from_wallet(wallet_bal);
 
     let result = tracker.can_execute(
-        Venue::Binance,
+        Venue::Cex,
         "USDT",
         dec!(500.0),
         Venue::Wallet,
@@ -129,13 +129,13 @@ fn test_can_execute_fails_insufficient_sell() {
 
     let mut cex_bal = HashMap::new();
     cex_bal.insert("USDT".to_string(), (dec!(10000.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, cex_bal);
+    tracker.update_from_cex(Venue::Cex, cex_bal);
 
     let wallet_bal = vec![TokenAmount::from_human("0.1", 18, Some("ETH".to_string())).unwrap()];
     tracker.update_from_wallet(wallet_bal);
 
     let result = tracker.can_execute(
-        Venue::Binance,
+        Venue::Cex,
         "USDT",
         dec!(500.0),
         Venue::Wallet,
@@ -158,10 +158,10 @@ fn test_record_trade_updates_balances() {
 
     let mut cex_bal = HashMap::new();
     cex_bal.insert("USDT".to_string(), (dec!(1000.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, cex_bal);
+    tracker.update_from_cex(Venue::Cex, cex_bal);
 
     tracker.record_trade(
-        Venue::Binance,
+        Venue::Cex,
         "buy",
         "ETH",
         "USDT",
@@ -171,8 +171,8 @@ fn test_record_trade_updates_balances() {
         "USDT",
     );
 
-    assert_eq!(tracker.get_available(Venue::Binance, "ETH"), dec!(1.0));
-    assert_eq!(tracker.get_available(Venue::Binance, "USDT"), dec!(499.9));
+    assert_eq!(tracker.get_available(Venue::Cex, "ETH"), dec!(1.0));
+    assert_eq!(tracker.get_available(Venue::Cex, "USDT"), dec!(499.9));
 }
 
 #[test]
@@ -181,7 +181,7 @@ fn test_skew_detects_imbalance() {
 
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(80.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let w_bal = vec![TokenAmount::from_human("20.0", 18, Some("ETH".to_string())).unwrap()];
     tracker.update_from_wallet(w_bal);
@@ -204,7 +204,7 @@ fn test_skew_balanced() {
 
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(50.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let w_bal = vec![TokenAmount::from_human("50.0", 18, Some("ETH".to_string())).unwrap()];
     tracker.update_from_wallet(w_bal);
@@ -220,7 +220,7 @@ fn test_check_detects_skewed_asset() {
     let mut tracker = InventoryTracker::new(None);
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(8.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let w_bal = vec![TokenAmount::from_human("2.0", 18, Some("ETH".into())).unwrap()];
     tracker.update_from_wallet(w_bal);
@@ -238,7 +238,7 @@ fn test_check_passes_balanced_asset() {
     let mut tracker = InventoryTracker::new(None);
     let mut b_bal = HashMap::new();
     b_bal.insert("USDT".to_string(), (dec!(550.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let w_bal = vec![TokenAmount::from_human("450.0", 6, Some("USDT".into())).unwrap()];
     tracker.update_from_wallet(w_bal);
@@ -255,7 +255,7 @@ fn test_plan_generates_correct_transfer() {
     let mut tracker = InventoryTracker::new(None);
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(20.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let w_bal = vec![TokenAmount::from_human("80.0", 18, Some("ETH".into())).unwrap()];
     tracker.update_from_wallet(w_bal);
@@ -265,7 +265,7 @@ fn test_plan_generates_correct_transfer() {
 
     assert_eq!(plans.len(), 1);
     assert_eq!(plans[0].from_venue, Venue::Wallet);
-    assert_eq!(plans[0].to_venue, Venue::Binance);
+    assert_eq!(plans[0].to_venue, Venue::Cex);
     assert_eq!(plans[0].amount, dec!(30.0));
 }
 
@@ -274,7 +274,7 @@ fn test_plan_respects_min_operating_balance() {
     let mut tracker = InventoryTracker::new(None);
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(0.6), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let planner = RebalancePlanner::new(&tracker, 0.0);
     let plans = planner.plan("ETH");
@@ -282,7 +282,7 @@ fn test_plan_respects_min_operating_balance() {
     assert_eq!(plans.len(), 1);
     assert_eq!(plans[0].amount, dec!(0.1));
     assert_eq!(
-        tracker.get_available(Venue::Binance, "ETH") - plans[0].amount,
+        tracker.get_available(Venue::Cex, "ETH") - plans[0].amount,
         dec!(0.5)
     );
 }
@@ -292,7 +292,7 @@ fn test_plan_accounts_for_fees() {
     let mut tracker = InventoryTracker::new(None);
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(10.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let planner = RebalancePlanner::new(&tracker, 10.0);
     let plans = planner.plan("ETH");
@@ -308,7 +308,7 @@ fn test_plan_empty_when_balanced() {
     let mut tracker = InventoryTracker::new(None);
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(5.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let w_bal = vec![TokenAmount::from_human("5.0", 18, Some("ETH".into())).unwrap()];
     tracker.update_from_wallet(w_bal);
@@ -325,7 +325,7 @@ fn test_estimate_cost_sums_correctly() {
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(10.0), dec!(0.0)));
     b_bal.insert("USDT".to_string(), (dec!(10000.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let planner = RebalancePlanner::new(&tracker, 0.0);
     let all_plans = planner.plan_all();
@@ -364,7 +364,7 @@ fn test_planner_respects_min_withdrawal() {
     let mut tracker = InventoryTracker::new(None);
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(0.505), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let w_bal = vec![
         TokenAmount::from_human("0.495", 18, Some("ETH".to_string()))

@@ -31,7 +31,7 @@ fn main() {
     let mut b_bal = HashMap::new();
     b_bal.insert("ETH".to_string(), (dec!(2.0), dec!(0.0)));
     b_bal.insert("USDT".to_string(), (dec!(18000.0), dec!(0.0)));
-    tracker.update_from_cex(Venue::Binance, b_bal);
+    tracker.update_from_cex(Venue::Cex, b_bal);
 
     let w_bal = vec![
         TokenAmount::from_human("8.0", 18, Some("ETH".to_string())).expect("Invalid ETH amount"),
@@ -112,7 +112,7 @@ fn main() {
                 );
                 println!("  ETA:      ~{} min", p.estimated_time_min);
 
-                let total_inventory = tracker.get_available(Venue::Binance, asset)
+                let total_inventory = tracker.get_available(Venue::Cex, asset)
                     + tracker.get_available(Venue::Wallet, asset);
                 let target = total_inventory / dec!(2.0);
 

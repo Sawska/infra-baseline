@@ -7,7 +7,7 @@ use tokio::time::sleep;
 async fn main() -> anyhow::Result<()> {
     let mut tracker = InventoryTracker::new(None);
 
-    tracker.update_from_cex(Venue::Binance, {
+    tracker.update_from_cex(Venue::Cex, {
         let mut m = std::collections::HashMap::new();
         m.insert("ETH".to_string(), (dec!(5.5), dec!(0.0)));
         m.insert("USDT".to_string(), (dec!(12000.0), dec!(0.0)));

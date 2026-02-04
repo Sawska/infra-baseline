@@ -51,9 +51,7 @@ async fn get_checker_with_mock_support()
             std::future::ready(())
         })?;
 
-    let pools = vec![
-        Address::from_string("0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852").unwrap(), // USDT/WETH
-    ];
+    let pools = vec![Address::from_string("0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852").unwrap()];
     pricing_engine.load_pools(pools).await?;
 
     let exchange_client = get_test_client().await;
@@ -71,7 +69,7 @@ async fn get_checker_with_mock_support()
 async fn test_arb_check_profitable_with_inventory() -> Result<()> {
     let mut checker = get_checker_with_mock_support().await?;
 
-    checker.inventory_tracker.update_from_cex(Venue::Binance, {
+    checker.inventory_tracker.update_from_cex(Venue::Cex, {
         let mut m = std::collections::HashMap::new();
         m.insert("ETH".to_string(), (dec!(10.0), dec!(0.0)));
         m.insert("USDT".to_string(), (dec!(50000.0), dec!(0.0)));

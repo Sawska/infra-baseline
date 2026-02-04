@@ -101,17 +101,13 @@ impl<'a> RebalancePlanner<'a> {
 
         let target_amount = total / dec!(2);
 
-        let binance_amount = self.tracker.get_available(Venue::Binance, asset);
+        let binance_amount = self.tracker.get_available(Venue::Cex, asset);
         let wallet_amount = self.tracker.get_available(Venue::Wallet, asset);
 
         let (from_venue, to_venue, amount_to_move) = if binance_amount > target_amount {
-            (
-                Venue::Binance,
-                Venue::Wallet,
-                binance_amount - target_amount,
-            )
+            (Venue::Cex, Venue::Wallet, binance_amount - target_amount)
         } else if wallet_amount > target_amount {
-            (Venue::Wallet, Venue::Binance, wallet_amount - target_amount)
+            (Venue::Wallet, Venue::Cex, wallet_amount - target_amount)
         } else {
             return vec![];
         };
