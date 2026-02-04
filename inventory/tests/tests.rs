@@ -62,7 +62,10 @@ fn test_snapshot_aggregates_across_venues() {
     tracker.update_from_wallet(wallet_balances);
 
     let snapshot = tracker.snapshot();
-    let total_eth = snapshot["totals"]["ETH"].as_str().unwrap();
+
+    let total_eth_raw = snapshot["totals"]["ETH"].to_string();
+
+    let total_eth = total_eth_raw.trim_matches('"');
 
     assert_eq!(Decimal::from_str(total_eth).unwrap(), dec!(15.0));
 }
@@ -189,7 +192,9 @@ fn test_skew_detects_imbalance() {
         !skew_data["needs_rebalance"].as_bool().unwrap()
             || skew_data["max_deviation_pct"].as_f64().unwrap() >= 0.3
     );
-    let total_val: Decimal = skew_data["total"].as_str().unwrap().parse().unwrap();
+    let total_val = Decimal::from_str(&skew_data["total"].to_string())
+        .or_else(|_| Decimal::from_f64(skew_data["total"].as_f64().unwrap_or(0.0)).ok_or("fail"))
+        .expect("Could not parse total as Decimal");
     assert_eq!(total_val, dec!(100));
 }
 
@@ -339,12 +344,18 @@ fn test_estimate_cost_sums_correctly() {
     let usdt_fee = TRANSFER_FEES.get("USDT").unwrap().withdrawal_fee;
 
     assert_eq!(
-        summary["total_fees"]["ETH"].as_str().unwrap(),
-        eth_fee.to_string()
+        summary["total_fees"]["ETH"]
+            .as_f64()
+            .map(|f| Decimal::from_f64(f).unwrap())
+            .expect("ETH fee should be a number"),
+        eth_fee
     );
     assert_eq!(
-        summary["total_fees"]["USDT"].as_str().unwrap(),
-        usdt_fee.to_string()
+        summary["total_fees"]["USDT"]
+            .as_f64()
+            .map(|f| Decimal::from_f64(f).unwrap())
+            .expect("USDT fee should be a number"),
+        usdt_fee
     );
 }
 

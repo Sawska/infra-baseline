@@ -92,8 +92,13 @@ impl<'a> RebalancePlanner<'a> {
             return vec![];
         }
 
-        let total =
-            Decimal::from_str(skew["total"].as_str().unwrap_or("0")).unwrap_or(Decimal::ZERO);
+        let total = skew["total"]
+            .as_str()
+            .and_then(|s| Decimal::from_str(s).ok())
+            .unwrap_or_else(|| {
+                Decimal::from_f64(skew["total"].as_f64().unwrap_or(0.0)).unwrap_or(Decimal::ZERO)
+            });
+
         let target_amount = total / dec!(2);
 
         let binance_amount = self.tracker.get_available(Venue::Binance, asset);
@@ -105,8 +110,10 @@ impl<'a> RebalancePlanner<'a> {
                 Venue::Wallet,
                 binance_amount - target_amount,
             )
-        } else {
+        } else if wallet_amount > target_amount {
             (Venue::Wallet, Venue::Binance, wallet_amount - target_amount)
+        } else {
+            return vec![];
         };
 
         let config = TRANSFER_FEES.get(asset);
