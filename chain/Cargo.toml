@@ -21,7 +21,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 futures.workspace = true
-rust_decimal.workspace = true
+rust_decimal = { version = "1.0", features = ["serde-float", "serde-arbitrary-precision"] }
 clap.workspace = true
 chrono.workspace = true
 anyhow.workspace = true

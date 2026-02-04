@@ -23,6 +23,7 @@ pub struct TradeLeg {
     pub symbol: String,
     pub side: Side,
     pub amount: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
     pub price: Decimal,
     pub fee: Decimal,
     pub fee_asset: String,
