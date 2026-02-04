@@ -186,7 +186,7 @@ fn test_skew_detects_imbalance() {
     let skew_data = tracker.skew("ETH");
 
     assert!(
-        skew_data["needs_rebalance"].as_bool().unwrap() == false
+        !skew_data["needs_rebalance"].as_bool().unwrap()
             || skew_data["max_deviation_pct"].as_f64().unwrap() >= 0.3
     );
     let total_val: Decimal = skew_data["total"].as_str().unwrap().parse().unwrap();
