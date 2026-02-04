@@ -6,7 +6,6 @@ authors.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-rust_decimal.workspace = true
 rust_decimal_macros ={ version = "1.40.0"}
 chrono.workspace = true
 dotenvy.workspace = true
@@ -17,3 +16,5 @@ pricing = { path = "../pricing" }
 exchange = {path = "../exchange"}
 inventory = {path = "../inventory"}
 arb-chain = { path = "../chain" }
+rust_decimal = { version = "1.0", features = ["serde-float", "serde-arbitrary-precision"] }
+serde_json = { version = "1.0", features = ["arbitrary_precision"] }

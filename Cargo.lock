@@ -2469,6 +2469,7 @@ dependencies = [
  "reqwest 0.13.1",
  "rust_decimal",
  "rust_decimal_macros",
+ "serde_json",
  "tokio",
 ]
 
@@ -3588,6 +3589,7 @@ dependencies = [
  "num-traits",
  "rand 0.8.5",
  "rkyv",
+ "ryu",
  "serde",
  "serde_json",
 ]
