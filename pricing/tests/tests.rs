@@ -599,7 +599,7 @@ async fn test_matches_uniswap_v2_exact_on_chain() {
         30,
     );
 
-    let amount_in = U256::from(1) * U256::from(10).pow(U256::from(18)); // 1 ETH
+    let amount_in = U256::from(1) * U256::from(10).pow(U256::from(18));
 
     let local_output = pair_model.get_amount_out(amount_in, &token_eth).unwrap();
 

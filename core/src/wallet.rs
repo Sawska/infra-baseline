@@ -1,6 +1,6 @@
 use crate::error::ArbError;
 use crate::types::{Address, TransactionRequest};
-use alloy_primitives::{Signature, B256};
+use alloy_primitives::{B256, Signature};
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::{Eip712Domain, SolStruct};

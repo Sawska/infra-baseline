@@ -5,7 +5,7 @@ use alloy_primitives::{Address, U160, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_rpc_types::{TransactionInput, TransactionRequest};
 use alloy_sol_types::SolCall;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::sync::Arc;
 use url::Url;
 

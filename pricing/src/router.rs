@@ -2,7 +2,7 @@
 #![allow(clippy::too_many_arguments)]
 use crate::amm::{Pool, Token};
 use alloy_primitives::U256;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use arb_core::Address;
 use std::collections::{HashMap, HashSet};
 
@@ -104,7 +104,6 @@ impl RouteFinder {
         let mut current_path_pools = Vec::new();
         let mut visited = HashSet::new();
 
-        // Start DFS
         visited.insert(token_in.address);
 
         self.dfs(

@@ -1,7 +1,7 @@
 use crate::ChainClient;
 use alloy_primitives::{Address as AlloyAddress, B256, U256};
 use alloy_rpc_types::{Transaction, TransactionTrait};
-use alloy_sol_types::{sol, SolCall, SolEvent, SolInterface};
+use alloy_sol_types::{SolCall, SolEvent, SolInterface, sol};
 use anyhow::{Context, Result};
 use arb_core::{Address, TokenAmount, TransactionReceipt};
 use serde::Serialize;

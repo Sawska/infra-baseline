@@ -4,7 +4,7 @@ use crate::monitor::{MempoolMonitor, MonitorEvent};
 use crate::router::{Route, RouteFinder};
 use crate::simulator::ForkSimulator;
 use alloy_primitives::U256;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use arb_chain::ChainClient;
 use arb_core::Address;
 use std::collections::HashMap;

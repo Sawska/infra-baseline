@@ -1,6 +1,6 @@
 use crate::client::ChainClient;
 use crate::error::ChainError;
-use alloy_primitives::{Bytes, B256};
+use alloy_primitives::{B256, Bytes};
 use arb_core::{Address, TokenAmount, TransactionReceipt, TransactionRequest, WalletManager};
 
 pub struct TransactionBuilder<'a> {

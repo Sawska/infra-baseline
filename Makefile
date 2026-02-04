@@ -1,7 +1,22 @@
-.PHONY: fmt run-analyzer run-impact run-sepolia test lint clean build
+.PHONY: fmt run-analyzer run-impact run-sepolia test lint clean build exchange-analyzer rebalancer-check pln-reporter rebalancer-plan realtime-dashboard
+
+SYMBOL ?= "ETH/USDT"
+DEPTH ?= 20
 
 run-analyzer:
 	cargo run --bin analyzer 0x6a45c9efcf942a48ba0e26441cf9db7f2ae6cc5f9731d3c7b7fc31692ab3cec0 --json
+exchange-analyzer:
+	cargo run -p exchange -- $(SYMBOL) --depth $(DEPTH)
+rebalancer-check:
+	cargo run --bin rebalancer_cli -- check
+rebalancer-plan:
+	cargo run --bin rebalancer_cli -- plan ETH
+pln-reporter:
+	cargo run --bin pnl_report -- summary --chart
+realtime-dashboard:
+	cargo run --bin inventory_dashboard
+arb_checker:
+	cargo run --bin arb_checker
 
 run-impact-1:
 	cargo run -p pricing --bin impact_analyzer -- \

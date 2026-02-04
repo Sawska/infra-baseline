@@ -1,6 +1,6 @@
 use crate::error::ChainError;
 use alloy_network::Ethereum;
-use alloy_primitives::{Address as AlloyAddress, TxKind, B256, U256};
+use alloy_primitives::{Address as AlloyAddress, B256, TxKind, U256};
 use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::{
     BlockId, BlockNumberOrTag, TransactionInput, TransactionRequest as AlloyTxRequest,

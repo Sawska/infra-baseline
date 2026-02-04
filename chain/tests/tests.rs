@@ -1,6 +1,6 @@
 use alloy_primitives::{B256, U256};
 use arb_chain::{
-    analyzer::DecodedEvent, Analyzer, ChainClient, ChainError, GasPrice, TransactionBuilder,
+    Analyzer, ChainClient, ChainError, GasPrice, TransactionBuilder, analyzer::DecodedEvent,
 };
 use arb_core::{Address, TokenAmount, WalletManager};
 use std::str::FromStr;

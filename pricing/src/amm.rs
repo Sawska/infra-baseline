@@ -1,7 +1,7 @@
-use alloy_primitives::{map::HashMap, Bytes, U256};
+use alloy_primitives::{Bytes, U256, map::HashMap};
 use alloy_rpc_types::BlockNumberOrTag;
 use alloy_sol_types::SolCall;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use arb_chain::ChainClient;
 use arb_core::{Address, TokenAmount, TransactionRequest};
 use rust_decimal::prelude::*;
@@ -101,7 +101,7 @@ impl UniswapV2Pair {
     /// denominator = (reserve_out - amount_out) * (10000 - fee_bps)
     /// amount_in = (numerator / denominator) + 1
     pub fn get_amount_in(&self, amount_out: U256, token_out: &Token) -> Result<U256> {
-        let (reserve_in, reserve_out) = self.get_reserves_ordered(token_out)?; // returns (other, same)
+        let (reserve_in, reserve_out) = self.get_reserves_ordered(token_out)?;
 
         if amount_out.is_zero() || amount_out >= reserve_out {
             return Err(anyhow!("Insufficient liquidity"));
@@ -416,7 +416,6 @@ impl UniswapV3Pool {
             state.amount_specified_remaining -= (amount_in_step + fee_amount) as i128;
             state.amount_calculated += amount_out_step as i128;
 
-            // 4. If we reached the next initialized tick, cross it
             if state.sqrt_price_x96 == step.sqrt_price_next_x96 && initialized {
                 let tick_data = self.ticks.get(&step.tick_next).cloned().unwrap_or_default();
 

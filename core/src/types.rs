@@ -2,7 +2,7 @@ use crate::error::ArbError;
 use alloy_consensus::SignableTransaction;
 use alloy_consensus::{Signed, TxEip1559};
 use alloy_eips::eip2718::Encodable2718;
-use alloy_primitives::{Address as AlloyAddress, Bytes, B256, U256};
+use alloy_primitives::{Address as AlloyAddress, B256, Bytes, U256};
 use alloy_signer::Signature;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};

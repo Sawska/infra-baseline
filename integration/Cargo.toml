@@ -1,0 +1,19 @@
+[package]
+name = "integration"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+rust_decimal.workspace = true
+rust_decimal_macros ={ version = "1.40.0"}
+chrono.workspace = true
+dotenvy.workspace = true
+reqwest = { version = "0.13.1", features = ["json"] }
+tokio.workspace = true
+arb-core = { path = "../core" }
+pricing = { path = "../pricing" }
+exchange = {path = "../exchange"}
+inventory = {path = "../inventory"}
+arb-chain = { path = "../chain" }

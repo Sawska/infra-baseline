@@ -1,5 +1,5 @@
 use alloy_primitives::Bytes;
-use alloy_sol_types::{sol, Eip712Domain};
+use alloy_sol_types::{Eip712Domain, sol};
 use arb_core::{
     Address, ArbError, CanonicalSerializer, TokenAmount, TransactionRequest, WalletManager,
 };

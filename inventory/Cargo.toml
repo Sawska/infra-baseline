@@ -1,0 +1,23 @@
+[package]
+name = "inventory"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+arb-core = { path = "../core" }
+pricing = { path = "../pricing" }
+rust_decimal = { version = "1.33", features = ["serde", "maths"] }
+serde.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+alloy-primitives.workspace = true
+rust_decimal_macros ={ version = "1.40.0"}
+lazy_static = {version = "1.5.0"}
+clap.workspace = true
+colored.workspace = true
+csv ={ version = "1.4.0"}
+[dev-dependencies]
+approx ={ version = "0.5.1"}

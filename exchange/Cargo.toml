@@ -1,0 +1,31 @@
+[package]
+name = "exchange"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+arb-core = { path = "../core" }
+pricing = { path = "../pricing" }
+dotenvy.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+reqwest = { version = "0.13.1", features = ["json"] }
+serde.workspace = true
+alloy-primitives.workspace = true
+serde_json.workspace = true
+colored.workspace = true
+rust_decimal = { version = "1.33", features = ["serde-float"] }
+chrono.workspace = true
+hmac = "0.12"
+clap.workspace = true
+sha2 = "0.10"
+hex.workspace = true
+url.workspace = true
+thiserror.workspace = true
+async-trait = "0.1"
+log = "0.4"
+futures-util.workspace = true
+tokio-tungstenite = "0.28.0"
+[dev-dependencies]
+rust_decimal_macros ={ version = "1.0"}

@@ -1,5 +1,5 @@
 use crate::error::ArbError;
-use alloy_primitives::{Keccak256, B256};
+use alloy_primitives::{B256, Keccak256};
 use serde::Serialize;
 use serde_json::ser::Formatter;
 
