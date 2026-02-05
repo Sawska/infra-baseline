@@ -54,9 +54,64 @@ The system is designed with a strong focus on determinism, type safety, and fina
 
 ---
 
+### Exchange (`exchange`)
+
+Execution-side abstraction over centralized venues. This module is responsible for market data ingestion, order management, and exchange-specific behavior while presenting a deterministic interface to the rest of the system.
+
+* **Binance Testnet Integration**
+  Connects to Binance Spot testnet for live order book snapshots and incremental depth updates.
+
+* **Order Book Analyzer**
+  Normalizes exchange depth data into internal price levels and computes spread, mid-price, and liquidity bands.
+
+* **Programmatic Order Management**
+  Places, cancels, and tracks orders through a typed client interface with explicit state transitions.
+
+* **Exchange Configuration Layer**
+  Centralized configuration for endpoints, symbols, rate limits, and authentication.
+
+---
+
+### Inventory & Accounting (`inventory`)
+
+Accounting and risk layer responsible for tracking positions across venues and keeping execution inventory-balanced under arbitrage pressure.
+
+* **Position & Balance Tracking**
+  Maintains per-venue balances, open positions, and exposure by asset.
+
+* **PnL Accounting**
+  Realized and unrealized PnL tracking with explicit attribution to trades and venues.
+
+* **Inventory Skew Detection**
+  Detects asset imbalances caused by partial fills, latency, or asymmetric liquidity.
+
+* **Rebalancing Engine**
+  Generates deterministic rebalancing plans to restore target inventory ratios across exchanges.
+
+* **Operational CLIs**
+
+  * `inventory_dashboard`: live view of balances and exposure
+  * `pnl_report`: historical and current PnL breakdown
+  * `rebalancer_cli`: manual and automated rebalancing control
+
+---
+
+### Integration (`integration`)
+
+End-to-end validation layer that ties pricing, exchange execution, and inventory accounting together.
+
+* **Arbitrage Consistency Checker**
+  Verifies that detected arbitrage opportunities remain profitable after execution fees, slippage, and inventory impact.
+
+* **Cross-Module Invariants**
+  Ensures balances, positions, and PnL remain internally consistent after simulated or live runs.
+
+---
+
 ## Architecture
 
 The system follows a strict separation between data access, pricing logic, simulation, and execution:
+
 ```mermaid
 flowchart LR
     AMM[amm.rs\nCore AMM Math]
@@ -76,10 +131,13 @@ flowchart LR
 
 ```
 arb-execution-engine/
-├── core/       # Pure logic (Wallet, Types, Serialization). No network dependencies.
-├── chain/      # Network logic (RPC Client, Tx Builder, Analyzer).
-├── pricing/    # AMM math, routing, simulation, price impact analysis.
-└── .env        # Configuration (Private Keys, RPC URLs)
+├── core/        # Pure logic (Wallet, Types, Serialization). No network dependencies.
+├── chain/       # Network logic (RPC Client, Tx Builder, Analyzer).
+├── pricing/     # AMM math, routing, simulation, price impact analysis.
+├── exchange/    # CEX connectivity, order books, and order execution.
+├── inventory/   # Positions, balances, PnL, and rebalancing logic.
+├── integration/ # End-to-end arbitrage and accounting checks.
+└── .env         # Configuration (Private Keys, RPC URLs)
 ```
 
 ---
@@ -92,6 +150,7 @@ arb-execution-engine/
 * Ethereum RPC URL (Alchemy, Infura, or equivalent)
 * Foundry / Anvil (for Mainnet forking and simulation)
 * Sepolia private key (for live integration tests)
+* Binance Testnet API credentials (for exchange module testing)
 
 ---
 
@@ -107,6 +166,8 @@ Edit `.env` and provide:
 
 * `PRIVATE_KEY` (no `0x` prefix)
 * `RPC_URL` or `SEPOLIA_RPC`
+* `BINANCE_API_KEY`
+* `BINANCE_API_SECRET`
 
 Build the workspace:
 
@@ -134,21 +195,27 @@ cargo run -p arb-chain --bin analyzer -- <TX_HASH>
 
 ---
 
-### 2. Price Impact Analyzer
+### 2. Exchange Order Book Analyzer
 
-Analyze slippage and liquidity depth for Uniswap V2/V3 pools using local simulation.
+Streams order book data from Binance testnet and computes liquidity metrics.
 
 ```bash
-cargo run -p pricing --bin impact_analyzer -- \
-  0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc \
-  --token-in USDC \
-  --sizes 1000,10000,100000 \
-  --rpc https://eth.merkle.io
+cargo run -p exchange --bin book_analyzer
 ```
 
 ---
 
-### 3. Local Mainnet Fork
+### 3. Inventory Dashboard
+
+Monitor balances, positions, and inventory skew in real time.
+
+```bash
+cargo run -p inventory --bin inventory_dashboard
+```
+
+---
+
+### 4. Local Mainnet Fork
 
 Start a local fork for simulation and strategy testing:
 
@@ -158,7 +225,7 @@ Start a local fork for simulation and strategy testing:
 
 ---
 
-### 4. Live Integration Test (Sepolia)
+### 5. Live Integration Test (Sepolia)
 
 Performs a full lifecycle test:
 
