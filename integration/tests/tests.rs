@@ -23,7 +23,7 @@ async fn get_test_client() -> ExchangeClient {
         is_sandbox: true,
     };
 
-    let base_url = "https://testnet.binance.vision".to_string();
+    let base_url = "https://api.binance.com".to_string();
     let ws_url = "wss://testnet.binance.vision/ws".to_string();
 
     ExchangeClient {
