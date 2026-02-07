@@ -1,12 +1,12 @@
 .PHONY: fmt run-analyzer run-impact run-sepolia test lint clean build exchange-analyzer rebalancer-check pln-reporter rebalancer-plan realtime-dashboard
 
-SYMBOL ?= "ETH/USDT"
+SYMBOL ?= "ETHUSDT"
 DEPTH ?= 20
 
 run-analyzer:
 	cargo run --bin analyzer 0x6a45c9efcf942a48ba0e26441cf9db7f2ae6cc5f9731d3c7b7fc31692ab3cec0 --json
 exchange-analyzer:
-	cargo run -p exchange -- $(SYMBOL) --depth $(DEPTH)
+	cargo run --bin book_analyzer -- $(SYMBOL) --depth $(DEPTH)
 rebalancer-check:
 	cargo run --bin rebalancer_cli -- check
 rebalancer-plan:
@@ -16,7 +16,9 @@ pln-reporter:
 realtime-dashboard:
 	cargo run --bin inventory_dashboard
 arb_checker:
-	cargo run --bin arb_checker
+	./scripts/start_fork.sh && cargo run --bin arb_checker
+
+
 
 run-impact-1:
 	cargo run -p pricing --bin impact_analyzer -- \
@@ -40,9 +42,9 @@ run-impact-3:
   --end-block 24343905 \
   --sizes 2500 \
   --rpc https://eth.merkle.io
-
+# RUN WITH ANVIL
 run-router:
-	cargo run -p pricing --bin router_demo -- \
+	./scripts/start_fork.sh && cargo run -p pricing --bin router_demo -- \
 	--pools 0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc,0xA478c2975Ab1Ea89e8196811F51A7B7Ade33eB11,0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852 \
 	--token-in USDC --token-out USDT --amount 1000
 

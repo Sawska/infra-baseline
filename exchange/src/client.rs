@@ -1,6 +1,6 @@
 use arb_core::error::ArbError;
 use arb_core::types::TokenAmount;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use hmac::{Hmac, Mac};
 use reqwest::Client;
 use rust_decimal::prelude::*;
@@ -10,38 +10,78 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
-use tokio::time::sleep;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Simple token bucket rate limiter for API compliance.
+/// A smart, weight-aware token bucket rate limiter.
+/// It refills tokens based on time and allows bursts for execution.
 pub struct RateLimiter {
-    last_request: Arc<Mutex<Instant>>,
-    min_interval: Duration,
+    capacity: f64,
+    pub tokens: Arc<Mutex<f64>>,
+    last_fill: Arc<Mutex<Instant>>,
+    pub tokens_per_ms: f64,
 }
 
 impl RateLimiter {
-    pub fn new(requests_per_second: u64) -> Self {
+    /// Creates a new limiter.
+    /// `max_weight_per_minute` is the exchange's stated limit (e.g., 1200 for Binance).
+    pub fn new(max_weight_per_minute: u64) -> Self {
+        let capacity = max_weight_per_minute as f64;
         Self {
-            last_request: Arc::new(Mutex::new(Instant::now() - Duration::from_secs(1))),
-            min_interval: Duration::from_micros(1_000_000 / requests_per_second),
+            capacity,
+            tokens: Arc::new(Mutex::new(capacity)),
+            last_fill: Arc::new(Mutex::new(Instant::now())),
+            tokens_per_ms: capacity / 60_000.0,
         }
     }
 
-    pub async fn wait(&self) {
-        let mut last = self.last_request.lock().await;
-        let now = Instant::now();
-        let diff = now.duration_since(*last);
+    /// Explicitly updates the bucket based on exchange response headers.
+    /// This prevents our local state from drifting away from the exchange's server-side state.
+    pub async fn update_from_headers(&self, used_weight: f64) {
+        let mut tokens = self.tokens.lock().await;
+        // Remaining tokens is Capacity - Used
+        let remaining = (self.capacity - used_weight).max(0.0);
+        *tokens = remaining;
+    }
 
-        if diff < self.min_interval {
-            let wait_time = self.min_interval - diff;
-            sleep(wait_time).await;
-            *last += self.min_interval;
-        } else {
-            *last = now;
+    /// Waits until enough weight capacity is available.
+    pub async fn wait(&self, weight: u32) {
+        let weight_f = weight as f64;
+        loop {
+            let now = Instant::now();
+            let mut tokens = self.tokens.lock().await;
+            let mut last_fill = self.last_fill.lock().await;
+
+            let elapsed = now.duration_since(*last_fill).as_secs_f64() * 1000.0;
+            let refill = elapsed * self.tokens_per_ms;
+
+            if refill > 0.0 {
+                *tokens = (*tokens + refill).min(self.capacity);
+                *last_fill = now;
+            }
+
+            if *tokens >= weight_f {
+                *tokens -= weight_f;
+                return;
+            }
+
+            let missing = weight_f - *tokens;
+            let wait_ms = (missing / self.tokens_per_ms).ceil() as u64;
+
+            drop(tokens);
+            drop(last_fill);
+
+            tokio::time::sleep(Duration::from_millis(wait_ms.max(1))).await;
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestPriority {
+    High,
+    Medium,
+    Low,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +118,7 @@ pub struct OrderResult {
     pub timestamp: u64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ExchangeType {
     Binance,
     Bybit,
@@ -91,41 +131,42 @@ pub struct ExchangeClient {
     pub base_url: String,
     pub ws_url: String,
     pub rate_limiter: RateLimiter,
-    pub used_weight: Arc<Mutex<u32>>,
 }
 
 impl ExchangeClient {
     pub async fn new(
-        config: crate::config::ExchangeConfig,
+        mut config: crate::config::ExchangeConfig,
         exchange_type: ExchangeType,
     ) -> Result<Self, ArbError> {
-        let (base_url, ws_url) = match exchange_type {
-            ExchangeType::Binance => {
+        config.api_key = config.api_key.trim().to_string();
+        config.secret = config.secret.trim().to_string();
+
+        let (base_url, ws_url, rate_limit) = match exchange_type {
+            ExchangeType::Binance => (
                 if config.is_sandbox {
-                    (
-                        "https://testnet.binance.vision".to_string(),
-                        "wss://testnet.binance.vision/ws".to_string(),
-                    )
+                    "https://testnet.binance.vision"
                 } else {
-                    (
-                        "https://api.binance.com".to_string(),
-                        "wss://stream.binance.com:9443/ws".to_string(),
-                    )
+                    "https://api.binance.com"
                 }
-            }
-            ExchangeType::Bybit => {
+                .to_string(),
+                "wss://stream.binance.com:9443/ws".to_string(),
+                1200,
+            ),
+            ExchangeType::Bybit => (
                 if config.is_sandbox {
-                    (
-                        "https://api-testnet.bybit.com".to_string(),
-                        "wss://stream-testnet.bybit.com/v5/public/spot".to_string(),
-                    )
+                    "https://api-testnet.bybit.com"
                 } else {
-                    (
-                        "https://api.bybit.com".to_string(),
-                        "wss://stream.bybit.com/v5/public/spot".to_string(),
-                    )
+                    "https://api.bybit.com"
                 }
-            }
+                .to_string(),
+                if config.is_sandbox {
+                    "wss://stream-testnet.bybit.com/v5/public/spot"
+                } else {
+                    "wss://stream.bybit.com/v5/public/spot"
+                }
+                .to_string(),
+                600,
+            ),
         };
 
         let client = Client::builder()
@@ -133,181 +174,154 @@ impl ExchangeClient {
             .build()
             .map_err(|e| ArbError::SerializationError(e.to_string()))?;
 
-        let rate_limiter = RateLimiter::new(15);
-
         let exchange = Self {
             config,
             exchange_type,
             http_client: client,
             base_url,
             ws_url,
-            rate_limiter,
-            used_weight: Arc::new(Mutex::new(0)),
+            rate_limiter: RateLimiter::new(rate_limit),
         };
 
         exchange.validate_connection().await?;
         Ok(exchange)
     }
 
-    /// WebSocket-based order book stream
-    pub async fn stream_order_book<F>(&self, symbol: &str, mut callback: F) -> Result<(), ArbError>
-    where
-        F: FnMut(OrderBook) + Send + 'static,
-    {
-        let symbol_clean = symbol.replace("/", "").to_lowercase();
-        let ws_endpoint = format!("{}/{}@depth20@100ms", self.ws_url, symbol_clean);
-
-        let (ws_stream, _) = connect_async(ws_endpoint)
-            .await
-            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
-
-        let (_, mut read) = ws_stream.split();
-
-        while let Some(message) = read.next().await {
-            if let Ok(Message::Text(text)) = message
-                && let Ok(data) = serde_json::from_str::<serde_json::Value>(&text)
-            {
-                let bids = self.parse_levels(&data["bids"])?;
-                let asks = self.parse_levels(&data["asks"])?;
-
-                if !bids.is_empty() && !asks.is_empty() {
-                    let best_bid = bids[0];
-                    let best_ask = asks[0];
-                    let mid = (best_bid.0 + best_ask.0) / Decimal::new(2, 0);
-                    let spread_bps = ((best_ask.0 - best_bid.0) / mid) * Decimal::new(10000, 0);
-
-                    callback(OrderBook {
-                        symbol: symbol.to_string(),
-                        timestamp: Self::get_timestamp(),
-                        bids,
-                        asks,
-                        best_bid,
-                        best_ask,
-                        mid_price: mid.normalize(),
-                        spread_bps: spread_bps.round_dp(2),
-                    });
+    /// Fetch weight for specific operations to avoid hardcoding everywhere
+    fn get_weight(&self, endpoint: &str, priority: RequestPriority) -> u32 {
+        match (self.exchange_type, priority) {
+            (ExchangeType::Binance, RequestPriority::High) => 1,
+            (ExchangeType::Binance, RequestPriority::Medium) => {
+                if endpoint.contains("/depth") {
+                    1
+                } else {
+                    2
                 }
             }
+            (ExchangeType::Binance, RequestPriority::Low) => 10,
+            (ExchangeType::Bybit, RequestPriority::High) => 1,
+            _ => 1,
         }
-        Ok(())
     }
 
-    async fn validate_connection(&self) -> Result<(), ArbError> {
-        let endpoint = match self.exchange_type {
-            ExchangeType::Binance => "/api/v3/time",
-            ExchangeType::Bybit => "/v5/market/time",
+    async fn signed_request(
+        &self,
+        method: &str,
+        endpoint: &str,
+        params: &str,
+        priority: RequestPriority,
+    ) -> Result<serde_json::Value, ArbError> {
+        let weight = self.get_weight(endpoint, priority);
+        self.rate_limiter.wait(weight).await;
+
+        let timestamp = Self::get_timestamp();
+        let recv_window = 5000;
+        let api_key = self.config.api_key.trim();
+
+        let (url, body, signature) = match self.exchange_type {
+            ExchangeType::Binance => {
+                let query = if params.is_empty() {
+                    format!("timestamp={}", timestamp)
+                } else {
+                    format!("{}&timestamp={}", params, timestamp)
+                };
+                let signature = self.sign_query(&query);
+                (
+                    format!(
+                        "{}{}?{}&signature={}",
+                        self.base_url, endpoint, query, signature
+                    ),
+                    None,
+                    None,
+                )
+            }
+            ExchangeType::Bybit => {
+                let (url, payload_to_sign, body_data) = if method == "GET" {
+                    let url = format!("{}{}?{}", self.base_url, endpoint, params);
+                    (url, params.to_string(), None)
+                } else {
+                    (
+                        format!("{}{}", self.base_url, endpoint),
+                        params.to_string(),
+                        Some(params.to_string()),
+                    )
+                };
+                let signature_payload =
+                    format!("{}{}{}{}", timestamp, api_key, recv_window, payload_to_sign);
+                let signature = self.sign_query(&signature_payload);
+                (url, body_data, Some(signature))
+            }
         };
-        let url = format!("{}{}", self.base_url, endpoint);
-        let resp = self
-            .http_client
-            .get(&url)
+
+        let mut rb = match method {
+            "GET" => self.http_client.get(&url),
+            "POST" => self.http_client.post(&url),
+            "DELETE" => self.http_client.delete(&url),
+            _ => return Err(ArbError::InvalidType),
+        };
+
+        if self.exchange_type == ExchangeType::Binance {
+            rb = rb.header("X-MBX-APIKEY", api_key);
+        } else {
+            rb = rb
+                .header("X-BAPI-API-KEY", api_key)
+                .header("X-BAPI-SIGN", signature.unwrap_or_default())
+                .header("X-BAPI-TIMESTAMP", timestamp.to_string())
+                .header("X-BAPI-RECV-WINDOW", recv_window.to_string());
+            if method != "GET" {
+                rb = rb.header("Content-Type", "application/json");
+            }
+        }
+
+        if let Some(b) = body {
+            rb = rb.body(b);
+        }
+
+        let resp = rb
             .send()
             .await
             .map_err(|e| ArbError::SerializationError(e.to_string()))?;
 
-        if !resp.status().is_success() {
+        if self.exchange_type == ExchangeType::Binance
+            && let Some(used) = resp.headers().get("X-MBX-USED-WEIGHT-1M")
+            && let Ok(val) = used.to_str().unwrap_or("0").parse::<f64>()
+        {
+            self.rate_limiter.update_from_headers(val).await;
+        }
+
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
+
+        if !status.is_success() {
             return Err(ArbError::SerializationError(format!(
-                "Status {}",
-                resp.status()
+                "Exchange Error: {}, Body: {}",
+                status, text
             )));
         }
-        Ok(())
-    }
 
-    pub async fn fetch_order_book(&self, symbol: &str, limit: u32) -> Result<OrderBook, ArbError> {
-        match self.exchange_type {
-            ExchangeType::Binance => self.fetch_binance_depth(symbol, limit).await,
-            ExchangeType::Bybit => self.fetch_bybit_depth(symbol, limit).await,
-        }
-    }
-
-    async fn fetch_binance_depth(&self, symbol: &str, limit: u32) -> Result<OrderBook, ArbError> {
-        let symbol_clean = symbol.replace("/", "");
-        let url = format!(
-            "{}/api/v3/depth?symbol={}&limit={}",
-            self.base_url, symbol_clean, limit
-        );
-        let resp = self
-            .http_client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
-
-        let data: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
-
-        self.parse_order_book_data(data, symbol, "bids", "asks")
-    }
-
-    async fn fetch_bybit_depth(&self, symbol: &str, limit: u32) -> Result<OrderBook, ArbError> {
-        let symbol_clean = symbol.replace("/", "");
-        let url = format!(
-            "{}/v5/market/orderbook?category=spot&symbol={}&limit={}",
-            self.base_url, symbol_clean, limit
-        );
-        let resp = self
-            .http_client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
-
-        let data: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
-
-        self.parse_order_book_data(data["result"].clone(), symbol, "b", "a")
-    }
-
-    fn parse_order_book_data(
-        &self,
-        data: serde_json::Value,
-        symbol: &str,
-        bid_key: &str,
-        ask_key: &str,
-    ) -> Result<OrderBook, ArbError> {
-        let bids = self.parse_levels(&data[bid_key])?;
-        let asks = self.parse_levels(&data[ask_key])?;
-
-        if bids.is_empty() || asks.is_empty() {
-            return Err(ArbError::InvalidType);
-        }
-
-        let best_bid = bids[0];
-        let best_ask = asks[0];
-        let mid = (best_bid.0 + best_ask.0) / Decimal::new(2, 0);
-        let spread_bps = if mid.is_zero() {
-            Decimal::ZERO
-        } else {
-            ((best_ask.0 - best_bid.0) / mid) * Decimal::new(10000, 0)
-        };
-
-        Ok(OrderBook {
-            symbol: symbol.to_string(),
-            timestamp: Self::get_timestamp(),
-            bids,
-            asks,
-            best_bid,
-            best_ask,
-            mid_price: mid.normalize(),
-            spread_bps: spread_bps.round_dp(2),
-        })
+        serde_json::from_str(&text)
+            .map_err(|e| ArbError::SerializationError(format!("JSON Error: {}", e)))
     }
 
     pub async fn fetch_balance(&self) -> Result<HashMap<String, Balance>, ArbError> {
-        let (endpoint, key) = match self.exchange_type {
-            ExchangeType::Binance => ("/api/v3/account", "balances"),
-            ExchangeType::Bybit => ("/v5/account/wallet-balance?accountType=SPOT", "list"),
+        let (endpoint, key, params) = match self.exchange_type {
+            ExchangeType::Binance => ("/api/v3/account", "balances", "".to_string()),
+            ExchangeType::Bybit => (
+                "/v5/account/wallet-balance",
+                "list",
+                "accountType=UNIFIED".to_string(),
+            ),
         };
 
-        let data = self.signed_request("GET", endpoint, "").await?;
+        let data = self
+            .signed_request("GET", endpoint, &params, RequestPriority::Low)
+            .await?;
         let mut balances = HashMap::new();
 
-        let assets = if self.exchange_type as u8 == ExchangeType::Binance as u8 {
+        let assets = if self.exchange_type == ExchangeType::Binance {
             data[key].as_array()
         } else {
             data["result"]["list"][0]["coin"].as_array()
@@ -323,11 +337,9 @@ impl ExchangeClient {
                 let free_str = asset["free"]
                     .as_str()
                     .or(asset["equity"].as_str())
+                    .or(asset["walletBalance"].as_str())
                     .unwrap_or("0");
-                let locked_str = asset["locked"]
-                    .as_str()
-                    .or(asset["locked"].as_str())
-                    .unwrap_or("0");
+                let locked_str = asset["locked"].as_str().unwrap_or("0");
 
                 let free = TokenAmount::from_human(free_str, 8, Some(symbol.clone()))?;
                 let locked = TokenAmount::from_human(locked_str, 8, Some(symbol.clone()))?;
@@ -356,101 +368,170 @@ impl ExchangeClient {
         price: Decimal,
     ) -> Result<OrderResult, ArbError> {
         let symbol_clean = symbol.replace("/", "");
-        let params = match self.exchange_type {
-            ExchangeType::Binance => format!(
-                "symbol={}&side={}&type=LIMIT&timeInForce=IOC&quantity={}&price={}",
-                symbol_clean,
-                side.to_uppercase(),
-                amount.to_human(),
-                price
+        let (endpoint, params) = match self.exchange_type {
+            ExchangeType::Binance => (
+                "/api/v3/order",
+                format!("symbol={}&side={}&type=LIMIT&timeInForce=IOC&quantity={}&price={}",
+                symbol_clean, side.to_uppercase(), amount.to_human(), price)
             ),
-            ExchangeType::Bybit => format!(
-                "category=spot&symbol={}&side={}&orderType=Limit&qty={}&price={}&timeInForce=IOC",
-                symbol_clean,
-                side.to_uppercase(),
-                amount.to_human(),
-                price
+            ExchangeType::Bybit => (
+                "/v5/order/create",
+                serde_json::json!({
+                    "category": "spot", "symbol": symbol_clean, "side": side.to_uppercase(),
+                    "orderType": "Limit", "qty": amount.to_human(), "price": price.to_string(), "timeInForce": "IOC"
+                }).to_string()
             ),
         };
 
-        let endpoint = match self.exchange_type {
-            ExchangeType::Binance => "/api/v3/order",
-            ExchangeType::Bybit => "/v5/order/create",
-        };
-
-        let data = self.signed_request("POST", endpoint, &params).await?;
+        let data = self
+            .signed_request("POST", endpoint, &params, RequestPriority::High)
+            .await?;
         self.map_order_response(data, symbol)
     }
 
-    async fn signed_request(
-        &self,
-        method: &str,
-        endpoint: &str,
-        params: &str,
-    ) -> Result<serde_json::Value, ArbError> {
-        self.rate_limiter.wait().await;
-        let timestamp = Self::get_timestamp();
+    pub async fn fetch_order_book(&self, symbol: &str, limit: u32) -> Result<OrderBook, ArbError> {
+        let symbol_clean = symbol.replace("/", "");
 
-        let (url, body, signature) = match self.exchange_type {
-            ExchangeType::Binance => {
-                let query = if params.is_empty() {
-                    format!("timestamp={}", timestamp)
-                } else {
-                    format!("{}&timestamp={}", params, timestamp)
-                };
-                let signature = self.sign_query(&query);
-                (
-                    format!(
-                        "{}{}?{}&signature={}",
-                        self.base_url, endpoint, query, signature
-                    ),
-                    None,
-                    None,
-                )
-            }
-            ExchangeType::Bybit => {
-                let recv_window = "5000";
-                let sign_payload = format!(
-                    "{}{}{}{}",
-                    timestamp, self.config.api_key, recv_window, params
-                );
-                let signature = self.sign_query(&sign_payload);
-                let url = format!("{}{}", self.base_url, endpoint);
-                (url, Some(params.to_string()), Some(signature))
-            }
+        let (url, bid_key, ask_key, data_path) = match self.exchange_type {
+            ExchangeType::Binance => (
+                format!(
+                    "{}/api/v3/depth?symbol={}&limit={}",
+                    self.base_url, symbol_clean, limit
+                ),
+                "bids",
+                "asks",
+                None,
+            ),
+            ExchangeType::Bybit => (
+                format!(
+                    "{}/v5/market/orderbook?category=spot&symbol={}&limit={}",
+                    self.base_url, symbol_clean, limit
+                ),
+                "b",
+                "a",
+                Some("result"),
+            ),
         };
 
-        let mut rb = match method {
-            "GET" => self.http_client.get(&url),
-            "POST" => self.http_client.post(&url),
-            "DELETE" => self.http_client.delete(&url),
-            _ => return Err(ArbError::InvalidType),
-        };
+        self.rate_limiter
+            .wait(self.get_weight("/depth", RequestPriority::Medium))
+            .await;
 
-        if let ExchangeType::Binance = self.exchange_type {
-            rb = rb.header("X-MBX-APIKEY", &self.config.api_key);
-        } else {
-            rb = rb
-                .header("X-BAPI-API-KEY", &self.config.api_key)
-                .header("X-BAPI-SIGN", signature.unwrap_or_default())
-                .header("X-BAPI-TIMESTAMP", timestamp.to_string())
-                .header("X-BAPI-RECV-WINDOW", "5000");
-        }
-
-        if let Some(b) = body {
-            rb = rb.body(b);
-        }
-
-        let resp = rb
+        let resp = self
+            .http_client
+            .get(&url)
             .send()
             .await
             .map_err(|e| ArbError::SerializationError(e.to_string()))?;
-        let data: serde_json::Value = resp
+        let mut data: serde_json::Value = resp
             .json()
             .await
             .map_err(|e| ArbError::SerializationError(e.to_string()))?;
 
-        Ok(data)
+        if let Some(path) = data_path {
+            data = data[path].clone();
+        }
+
+        let bids = self.parse_levels(&data[bid_key])?;
+        let asks = self.parse_levels(&data[ask_key])?;
+
+        Ok(self.construct_order_book(symbol.to_string(), bids, asks))
+    }
+
+    pub async fn stream_order_book<F>(&self, symbol: &str, callback: F) -> Result<(), ArbError>
+    where
+        F: FnMut(OrderBook) + Send + 'static,
+    {
+        match self.exchange_type {
+            ExchangeType::Binance => self.stream_binance(symbol, callback).await,
+            ExchangeType::Bybit => self.stream_bybit(symbol, callback).await,
+        }
+    }
+
+    async fn stream_binance<F>(&self, symbol: &str, mut callback: F) -> Result<(), ArbError>
+    where
+        F: FnMut(OrderBook) + Send + 'static,
+    {
+        let symbol_clean = symbol.replace("/", "").to_lowercase();
+        let stream_name = format!("{}@depth20@100ms", symbol_clean);
+        let ws_endpoint = format!("{}/{}", self.ws_url, stream_name);
+
+        let (mut ws_stream, _) = connect_async(&ws_endpoint)
+            .await
+            .map_err(|e| ArbError::SerializationError(format!("Binance WS Connect: {}", e)))?;
+        while let Some(message) = ws_stream.next().await {
+            if let Ok(Message::Text(text)) = message
+                && let Ok(data) = serde_json::from_str::<serde_json::Value>(&text)
+            {
+                let bids = self.parse_levels(&data["bids"])?;
+                let asks = self.parse_levels(&data["asks"])?;
+
+                if !bids.is_empty() && !asks.is_empty() {
+                    callback(self.construct_order_book(symbol.to_string(), bids, asks));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn stream_bybit<F>(&self, symbol: &str, mut callback: F) -> Result<(), ArbError>
+    where
+        F: FnMut(OrderBook) + Send + 'static,
+    {
+        let symbol_clean = symbol.replace("/", "").to_uppercase();
+        let (mut ws_stream, _) = connect_async(&self.ws_url)
+            .await
+            .map_err(|e| ArbError::SerializationError(format!("Bybit WS Connect: {}", e)))?;
+
+        let subscribe_msg = serde_json::json!({
+            "op": "subscribe",
+            "args": [format!("orderbook.1.{}", symbol_clean)]
+        });
+
+        ws_stream
+            .send(Message::Text(subscribe_msg.to_string().into()))
+            .await
+            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
+
+        while let Some(message) = ws_stream.next().await {
+            match message {
+                Ok(Message::Text(text)) => {
+                    if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text)
+                        && let Some(ob_data) = data.get("data")
+                    {
+                        let bids = self.parse_levels(&ob_data["b"])?;
+                        let asks = self.parse_levels(&ob_data["a"])?;
+
+                        if !bids.is_empty() && !asks.is_empty() {
+                            callback(self.construct_order_book(symbol.to_string(), bids, asks));
+                        }
+                    }
+                }
+                Ok(Message::Ping(p)) => {
+                    let _ = ws_stream.send(Message::Pong(p)).await;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn cancel_order(&self, symbol: &str, order_id: &str) -> Result<bool, ArbError> {
+        let symbol_clean = symbol.replace("/", "");
+        let (method, endpoint, params) = match self.exchange_type {
+            ExchangeType::Binance => ("DELETE", "/api/v3/order", format!("symbol={}&orderId={}", symbol_clean, order_id)),
+            ExchangeType::Bybit => ("POST", "/v5/order/cancel", serde_json::json!({"category": "spot", "symbol": symbol_clean, "orderId": order_id}).to_string()),
+        };
+
+        let data = self
+            .signed_request(method, endpoint, &params, RequestPriority::High)
+            .await?;
+        Ok(match self.exchange_type {
+            ExchangeType::Binance => {
+                data["orderId"].as_str().is_some() || data["orderId"].as_u64().is_some()
+            }
+            ExchangeType::Bybit => data["retCode"].as_i64().unwrap_or(-1) == 0,
+        })
     }
 
     fn sign_query(&self, payload: &str) -> String {
@@ -467,13 +548,75 @@ impl ExchangeClient {
             .as_millis() as u64
     }
 
+    fn construct_order_book(
+        &self,
+        symbol: String,
+        bids: Vec<(Decimal, Decimal)>,
+        asks: Vec<(Decimal, Decimal)>,
+    ) -> OrderBook {
+        let best_bid = bids[0];
+        let best_ask = asks[0];
+        let mid = (best_bid.0 + best_ask.0) / Decimal::new(2, 0);
+        let spread_bps = if mid.is_zero() {
+            Decimal::ZERO
+        } else {
+            ((best_ask.0 - best_bid.0) / mid) * Decimal::new(10000, 0)
+        };
+
+        OrderBook {
+            symbol,
+            timestamp: Self::get_timestamp(),
+            bids,
+            asks,
+            best_bid,
+            best_ask,
+            mid_price: mid.normalize(),
+            spread_bps: spread_bps.round_dp(2),
+        }
+    }
+
+    fn parse_levels(&self, data: &serde_json::Value) -> Result<Vec<(Decimal, Decimal)>, ArbError> {
+        let mut levels = Vec::new();
+        if let Some(arr) = data.as_array() {
+            for item in arr {
+                let price = Decimal::from_str(item[0].as_str().ok_or(ArbError::DecimalError)?)
+                    .map_err(|_| ArbError::DecimalError)?;
+                let qty = Decimal::from_str(item[1].as_str().ok_or(ArbError::DecimalError)?)
+                    .map_err(|_| ArbError::DecimalError)?;
+                levels.push((price, qty));
+            }
+        }
+        Ok(levels)
+    }
+
+    async fn validate_connection(&self) -> Result<(), ArbError> {
+        let endpoint = match self.exchange_type {
+            ExchangeType::Binance => "/api/v3/time",
+            ExchangeType::Bybit => "/v5/market/time",
+        };
+        let url = format!("{}{}", self.base_url, endpoint);
+        let resp = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
+        if !resp.status().is_success() {
+            return Err(ArbError::SerializationError(format!(
+                "Status {}",
+                resp.status()
+            )));
+        }
+        Ok(())
+    }
+
     fn map_order_response(
         &self,
         data: serde_json::Value,
         symbol: &str,
     ) -> Result<OrderResult, ArbError> {
         let asset = symbol.split('/').next().unwrap_or("").to_string();
-        let d = if self.exchange_type as u8 == ExchangeType::Binance as u8 {
+        let d = if self.exchange_type == ExchangeType::Binance {
             data
         } else {
             data["result"].clone()
@@ -517,52 +660,5 @@ impl ExchangeClient {
                 .to_lowercase(),
             timestamp: Self::get_timestamp(),
         })
-    }
-
-    fn parse_levels(&self, data: &serde_json::Value) -> Result<Vec<(Decimal, Decimal)>, ArbError> {
-        let mut levels = Vec::new();
-        if let Some(arr) = data.as_array() {
-            for item in arr {
-                let price = Decimal::from_str(item[0].as_str().ok_or(ArbError::DecimalError)?)
-                    .map_err(|_| ArbError::DecimalError)?;
-                let qty = Decimal::from_str(item[1].as_str().ok_or(ArbError::DecimalError)?)
-                    .map_err(|_| ArbError::DecimalError)?;
-                levels.push((price, qty));
-            }
-        }
-        Ok(levels)
-    }
-
-    pub async fn cancel_order(&self, symbol: &str, order_id: &str) -> Result<bool, ArbError> {
-        let symbol_clean = symbol.replace("/", "");
-
-        let (method, endpoint, params) = match self.exchange_type {
-            ExchangeType::Binance => (
-                "DELETE",
-                "/api/v3/order",
-                format!("symbol={}&orderId={}", symbol_clean, order_id),
-            ),
-            ExchangeType::Bybit => (
-                "POST",
-                "/v5/order/cancel",
-                serde_json::json!({
-                    "category": "spot",
-                    "symbol": symbol_clean,
-                    "orderId": order_id
-                })
-                .to_string(),
-            ),
-        };
-
-        let data = self.signed_request(method, endpoint, &params).await?;
-
-        let success = match self.exchange_type {
-            ExchangeType::Binance => {
-                data["orderId"].as_str().is_some() || data["orderId"].as_u64().is_some()
-            }
-            ExchangeType::Bybit => data["retCode"].as_i64().unwrap_or(-1) == 0,
-        };
-
-        Ok(success)
     }
 }

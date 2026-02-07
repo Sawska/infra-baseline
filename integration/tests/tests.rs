@@ -10,7 +10,6 @@ use pricing::amm::Token;
 use pricing::engine::PricingEngine;
 use rust_decimal_macros::dec;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 const WETH_ADDR: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const USDT_ADDR: &str = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
@@ -34,7 +33,6 @@ async fn get_test_client() -> ExchangeClient {
         base_url,
         ws_url,
         rate_limiter: RateLimiter::new(100),
-        used_weight: Arc::new(Mutex::new(0)),
     }
 }
 

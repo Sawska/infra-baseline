@@ -1,117 +1,245 @@
 use chrono::Utc;
+use colored::*;
+use exchange::client::{ExchangeClient, ExchangeType, OrderBook};
+use exchange::config::ExchangeConfig;
 use inventory::pnl::{ArbRecord, PnLEngine, Side, TradeLeg};
 use inventory::tracker::Venue;
-use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::env;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::time::{Duration, interval};
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let show_chart = args.contains(&"--chart".to_string());
+/// Internal event enum to handle updates from multiple sources
+enum MarketUpdate {
+    Binance(OrderBook),
+    Bybit(OrderBook),
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    print!("{}[2J{}[1;1H", 27 as char, 27 as char);
+    println!("🚀 Starting Real-Time Arbitrage Engine...");
+    println!("   Connecting to Binance and Bybit streams...");
+
+    let cfg_binance = ExchangeConfig::from_env(ExchangeType::Binance).unwrap();
+    let client_binance = Arc::new(ExchangeClient::new(cfg_binance, ExchangeType::Binance).await?);
+
+    let cfg_bybit = ExchangeConfig::from_env(ExchangeType::Bybit).unwrap();
+    let client_bybit = Arc::new(ExchangeClient::new(cfg_bybit, ExchangeType::Bybit).await?);
+
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let tx_bin = tx.clone();
+    let tx_by = tx.clone();
+
+    let c_bin = client_binance.clone();
+    tokio::spawn(async move {
+        let symbol = "ETHUSDT";
+        if let Err(e) = c_bin
+            .stream_order_book(symbol, move |ob| {
+                let _ = tx_bin.send(MarketUpdate::Binance(ob));
+            })
+            .await
+        {
+            eprintln!("❌ Binance Stream Error: {}", e);
+        }
+    });
+
+    let c_by = client_bybit.clone();
+    tokio::spawn(async move {
+        let symbol = "ETH/USDT";
+        if let Err(e) = c_by
+            .stream_order_book(symbol, move |ob| {
+                let _ = tx_by.send(MarketUpdate::Bybit(ob));
+            })
+            .await
+        {
+            eprintln!("❌ Bybit Stream Error: {}", e);
+        }
+    });
 
     let mut engine = PnLEngine::new();
-    let v_bin = Venue::Cex;
-    let v_uni = Venue::Wallet;
+    let mut ob_binance: Option<OrderBook> = None;
+    let mut ob_bybit: Option<OrderBook> = None;
+    let mut trade_count = 0;
 
-    for i in 0..25 {
-        let is_win = i % 4 != 0;
-        let price_diff = if is_win {
-            dec!(4.5) + (Decimal::from(i) * dec!(0.1))
-        } else {
-            dec!(-2.0)
-        };
+    let mut ui_ticker = interval(Duration::from_millis(500));
+    let mut needs_render = true;
 
-        let timestamp = Utc::now() - chrono::Duration::minutes((30 - i) * 15);
+    loop {
+        tokio::select! {
+                    Some(update) = rx.recv() => {
+                        match update {
+                            MarketUpdate::Binance(ob) => ob_binance = Some(ob),
+                            MarketUpdate::Bybit(ob) => ob_bybit = Some(ob),
+                        }
 
-        let buy = TradeLeg {
-            id: format!("b{}", i),
-            timestamp,
-            venue: v_uni,
-            symbol: "ETH/USDT".into(),
-            side: Side::Buy,
-            amount: dec!(1.5),
-            price: dec!(2400.0),
-            fee: dec!(0.75),
-            fee_asset: "USDT".into(),
-        };
+                        if let (Some(bin), Some(byb)) = (&ob_binance, &ob_bybit)
+            && let Some(record) = check_arb(bin, byb, trade_count) {
+            engine.record(record);
+            trade_count += 1;
+            needs_render = true;
+        }
 
-        let sell = TradeLeg {
-            id: format!("s{}", i),
-            timestamp,
-            venue: v_bin,
-            symbol: "ETH/USDT".into(),
-            side: Side::Buy,
-            amount: dec!(1.5),
-            price: dec!(2400.0) + price_diff,
-            fee: dec!(0.4),
-            fee_asset: "USDT".into(),
-        };
+                    }
+                    _ = ui_ticker.tick() => {
+                        if needs_render || trade_count == 0 {
+                            render_dashboard(&engine, &ob_binance, &ob_bybit);
+                            needs_render = false;
+                        }
+                    }
+                }
+    }
+}
 
-        engine.record(ArbRecord {
-            id: format!("arb{}", i),
-            timestamp,
-            buy_leg: buy,
-            sell_leg: sell,
-            gas_cost_usd: dec!(1.5),
+/// Checks for profitable spread between two order books.
+/// Simulates a "Paper Trade" if spread covers fees.
+fn check_arb(bin: &OrderBook, byb: &OrderBook, id_counter: usize) -> Option<ArbRecord> {
+    let fee_rate = dec!(0.001);
+    let trade_amt = dec!(1.0);
+
+    let cost_buy_bin = bin.best_ask.0 * trade_amt;
+    let recv_sell_byb = byb.best_bid.0 * trade_amt;
+
+    let cost_net = cost_buy_bin * (dec!(1.0) + fee_rate);
+    let recv_net = recv_sell_byb * (dec!(1.0) - fee_rate);
+    let pnl_1 = recv_net - cost_net;
+
+    let cost_buy_byb = byb.best_ask.0 * trade_amt;
+    let recv_sell_bin = bin.best_bid.0 * trade_amt;
+
+    let cost_net_2 = cost_buy_byb * (dec!(1.0) + fee_rate);
+    let recv_net_2 = recv_sell_bin * (dec!(1.0) - fee_rate);
+    let pnl_2 = recv_net_2 - cost_net_2;
+
+    let min_profit = dec!(0.50);
+
+    if pnl_1 > min_profit {
+        return Some(ArbRecord {
+            id: format!("arb-{}", id_counter),
+            timestamp: Utc::now(),
+            buy_leg: TradeLeg {
+                id: format!("b-{}", id_counter),
+                timestamp: Utc::now(),
+                venue: Venue::Cex,
+                symbol: "ETH/USDT".into(),
+                side: Side::Buy,
+                amount: trade_amt,
+                price: bin.best_ask.0,
+                fee: cost_buy_bin * fee_rate,
+                fee_asset: "USDT".into(),
+            },
+            sell_leg: TradeLeg {
+                id: format!("s-{}", id_counter),
+                timestamp: Utc::now(),
+                venue: Venue::Wallet,
+                symbol: "ETH/USDT".into(),
+                side: Side::Sell,
+                amount: trade_amt,
+                price: byb.best_bid.0,
+                fee: recv_sell_byb * fee_rate,
+                fee_asset: "USDT".into(),
+            },
+            gas_cost_usd: dec!(0.0),
         });
     }
 
-    if show_chart {
-        println!("📊 Generating historical PnL chart...");
-        match engine.export_plotly_html("pnl_history.html") {
-            Ok(_) => println!("✅ Chart exported to pnl_history.html"),
-            Err(e) => eprintln!("❌ Error exporting chart: {}", e),
-        }
+    if pnl_2 > min_profit {
+        return Some(ArbRecord {
+            id: format!("arb-{}", id_counter),
+            timestamp: Utc::now(),
+            buy_leg: TradeLeg {
+                id: format!("b-{}", id_counter),
+                timestamp: Utc::now(),
+                venue: Venue::Wallet, // Bybit
+                symbol: "ETH/USDT".into(),
+                side: Side::Buy,
+                amount: trade_amt,
+                price: byb.best_ask.0,
+                fee: cost_buy_byb * fee_rate,
+                fee_asset: "USDT".into(),
+            },
+            sell_leg: TradeLeg {
+                id: format!("s-{}", id_counter),
+                timestamp: Utc::now(),
+                venue: Venue::Cex, // Binance
+                symbol: "ETH/USDT".into(),
+                side: Side::Sell,
+                amount: trade_amt,
+                price: bin.best_bid.0,
+                fee: recv_sell_bin * fee_rate,
+                fee_asset: "USDT".into(),
+            },
+            gas_cost_usd: dec!(0.0),
+        });
     }
 
-    render_dashboard(&engine);
+    None
 }
 
-/// Renders a terminal-based dashboard UI.
-fn render_dashboard(engine: &PnLEngine) {
+/// Renders the TUI
+fn render_dashboard(engine: &PnLEngine, ob_bin: &Option<OrderBook>, ob_by: &Option<OrderBook>) {
     let s = engine.summary();
-    if s.is_empty() {
-        println!("No trades recorded yet.");
-        return;
-    }
 
     print!("{}[2J{}[1;1H", 27 as char, 27 as char);
 
     println!("╔══════════════════════════════════════════════════════════════╗");
-    println!("║                REAL-TIME ARBITRAGE DASHBOARD                 ║");
+    println!("║             LIVE ARBITRAGE MONITOR (PAPER MODE)              ║");
     println!("╠══════════════════════════════════════════════════════════════╣");
-    println!("║  OVERVIEW (Last 24h)                                         ║");
-    println!("║  ──────────────────                                          ║");
+    println!("║  LIVE PRICES (ETH/USDT)                                      ║");
+
+    let bin_str = if let Some(ob) = ob_bin {
+        format!("${:.2} / ${:.2}", ob.best_bid.0, ob.best_ask.0)
+    } else {
+        "Waiting...".to_string()
+    };
+
+    let byb_str = if let Some(ob) = ob_by {
+        format!("${:.2} / ${:.2}", ob.best_bid.0, ob.best_ask.0)
+    } else {
+        "Waiting...".to_string()
+    };
+
+    println!("║  Binance: {:<42} ║", bin_str.cyan());
+    println!("║  Bybit:   {:<42} ║", byb_str.magenta());
+    println!("╠══════════════════════════════════════════════════════════════╣");
+
+    if s.is_empty() {
+        println!("║  Waiting for opportunities...                                ║");
+        println!("╚══════════════════════════════════════════════════════════════╝");
+        return;
+    }
+
     println!(
-        "║  Total Trades: {:<10} | Win Rate: {:<18} ║",
+        "║  Total Opps:   {:<10} | Win Rate: {:<18} ║",
         s["total_trades"], s["win_rate"]
     );
     println!(
-        "║  Net PnL:      ${:<9} | Avg BPS:  {:<18} ║",
+        "║  Potential PnL:${:<9} | Avg BPS:  {:<18} ║",
         s["total_pnl_usd"], s["avg_pnl_bps"]
     );
-    println!(
-        "║  Sharpe:       {:<10} | Notional: ${:<17} ║",
-        s["sharpe_estimate"], s["total_notional"]
-    );
     println!("╠══════════════════════════════════════════════════════════════╣");
-    println!("║  PERFORMANCE EXTREMES                                        ║");
-    println!(
-        "║  Best:  ${:<14} | Worst: ${:<20} ║",
-        s["best_trade_pnl"], s["worst_trade_pnl"]
-    );
-    println!("╠══════════════════════════════════════════════════════════════╣");
-    println!("║  RECENT ACTIVITY                                             ║");
+    println!("║  RECENT OPPORTUNITIES                                        ║");
 
-    let recent = engine.recent(8);
+    let recent = engine.recent(5);
     for t in recent {
         let status = if t["is_win"] == "true" { "✅" } else { "❌" };
         let sign = if t["pnl"].starts_with('-') { "" } else { "+" };
+
+        let route = t["route"]
+            .as_str()
+            .replace("Wallet", "Bybit")
+            .replace("Cex", "Binance");
+        let route_display = if route.len() > 24 {
+            format!("{}..", &route[0..22])
+        } else {
+            route
+        };
+
         println!(
             "║  {}  {:<4} {:<24} {}${:<6} ({:>5} bps) {} ║",
-            t["time"], t["asset"], t["route"], sign, t["pnl"], t["bps"], status
+            t["time"], t["asset"], route_display, sign, t["pnl"], t["bps"], status
         );
     }
     println!("╚══════════════════════════════════════════════════════════════╝");
-    println!("  (Run with --chart to export historical Plotly chart)");
+    println!("  Monitoring for spreads > 0.1% (net of fees)...");
 }

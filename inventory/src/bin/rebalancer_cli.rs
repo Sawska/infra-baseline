@@ -51,7 +51,7 @@ fn main() {
                 let asset = skew["asset"].as_str().unwrap();
                 println!("Asset: {}", asset.yellow().bold());
 
-                for venue in ["Binance", "Wallet"] {
+                for venue in ["Cex", "Wallet"] {
                     let data = &skew["venues"][venue];
                     let amt = data["amount"].as_f64().unwrap();
                     let pct = data["pct"].as_f64().unwrap() * 100.0;

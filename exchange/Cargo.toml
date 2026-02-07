@@ -26,6 +26,6 @@ thiserror.workspace = true
 async-trait = "0.1"
 log = "0.4"
 futures-util.workspace = true
-tokio-tungstenite = "0.28.0"
+tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
 [dev-dependencies]
 rust_decimal_macros ={ version = "1.0"}

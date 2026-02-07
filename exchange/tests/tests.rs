@@ -7,8 +7,7 @@ use exchange::config::ExchangeConfig;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::time::{Duration, timeout};
 
 fn create_test_order_book() -> OrderBook {
     OrderBook {
@@ -55,8 +54,7 @@ async fn get_test_client(exchange: ExchangeType) -> ExchangeClient {
         http_client: reqwest::Client::new(),
         base_url,
         ws_url,
-        rate_limiter: RateLimiter::new(10000),
-        used_weight: Arc::new(Mutex::new(0)),
+        rate_limiter: RateLimiter::new(1200),
     }
 }
 
@@ -155,15 +153,39 @@ fn test_limit_ioc_returns_fill_info() {
 async fn test_rate_limiter_blocks_when_exhausted() {
     let client = get_test_client(ExchangeType::Binance).await;
 
-    {
-        let mut w = client.used_weight.lock().await;
-        *w = 1200;
-    }
+    client.rate_limiter.update_from_headers(1200.0).await;
 
-    let current_weight = *client.used_weight.lock().await;
+    let weight_to_request = 1000;
+
+    let result = tokio::time::timeout(
+        Duration::from_millis(200),
+        client.rate_limiter.wait(weight_to_request),
+    )
+    .await;
+
     assert!(
-        current_weight >= 1200,
-        "Weight tracking should reflect exhaustion"
+        result.is_err(),
+        "The rate limiter should have blocked the request because the weight is exhausted"
+    );
+}
+
+#[tokio::test]
+async fn test_rate_limiter_recovers_after_wait() {
+    let client = get_test_client(ExchangeType::Binance).await;
+
+    client.rate_limiter.update_from_headers(1199.5).await;
+
+    let weight_to_request = 1;
+
+    let result = timeout(
+        Duration::from_secs(2),
+        client.rate_limiter.wait(weight_to_request),
+    )
+    .await;
+
+    assert!(
+        result.is_ok(),
+        "The rate limiter should have allowed the request after a short refill period"
     );
 }
 
