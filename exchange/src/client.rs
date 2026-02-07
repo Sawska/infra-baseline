@@ -554,8 +554,8 @@ impl ExchangeClient {
         bids: Vec<(Decimal, Decimal)>,
         asks: Vec<(Decimal, Decimal)>,
     ) -> OrderBook {
-        let best_bid = bids[0];
-        let best_ask = asks[0];
+        let best_bid = *bids.first().unwrap_or(&(Decimal::ZERO, Decimal::ZERO));
+        let best_ask = *asks.first().unwrap_or(&(Decimal::ZERO, Decimal::ZERO));
         let mid = (best_bid.0 + best_ask.0) / Decimal::new(2, 0);
         let spread_bps = if mid.is_zero() {
             Decimal::ZERO
