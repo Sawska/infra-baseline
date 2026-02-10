@@ -244,3 +244,101 @@ fn test_effective_spread_greater_than_quoted() {
     let effective = analyzer.effective_spread(dec!(20.0));
     assert!(effective >= quoted);
 }
+
+#[tokio::test]
+async fn test_real_binance_order_book_fetch() {
+    let client = get_test_client(ExchangeType::Binance).await;
+    let symbol = "BTCUSDT";
+
+    println!(
+        "Fetching live order book for {} from Binance Testnet...",
+        symbol
+    );
+
+    let result = client.fetch_order_book(symbol, 5).await;
+
+    match result {
+        Ok(book) => {
+            assert_eq!(book.symbol, symbol);
+            assert!(book.timestamp > 0, "Timestamp should be valid");
+
+            assert!(!book.bids.is_empty(), "Live order book should have bids");
+            assert!(!book.asks.is_empty(), "Live order book should have asks");
+
+            let best_bid = book.best_bid.0;
+            let best_ask = book.best_ask.0;
+
+            assert!(
+                best_ask > best_bid,
+                "Crossed book detected! Ask ({}) <= Bid ({})",
+                best_ask,
+                best_bid
+            );
+
+            assert!(book.spread_bps > dec!(0.0), "Spread should be positive");
+            assert!(book.mid_price > dec!(0.0), "Mid price should be positive");
+
+            println!(
+                "Successfully validated live order book. Spread: {} bps",
+                book.spread_bps
+            );
+        }
+        Err(e) => {
+            panic!("Failed to fetch live data from Binance Testnet: {:?}", e);
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_real_binance_analyzer_integration() {
+    let client = get_test_client(ExchangeType::Binance).await;
+    let symbol = "BTCUSDT";
+
+    println!("Running analyzer integration on live {} data...", symbol);
+    let book_result = client.fetch_order_book(symbol, 5).await;
+
+    match book_result {
+        Ok(book) => {
+            let best_ask_price = book.best_ask.0;
+            let analyzer = OrderBookAnalyzer::new(book);
+
+            let order_size = dec!(0.1);
+            let fill = analyzer.walk_the_book("buy", order_size);
+
+            assert!(
+                fill.fully_filled,
+                "Should be able to buy 0.1 BTC on liquid pair"
+            );
+            assert!(
+                fill.avg_price >= best_ask_price,
+                "Buy fill price must be >= best ask"
+            );
+            assert!(
+                fill.levels_consumed >= 1,
+                "Must consume at least the first level"
+            );
+
+            let max_expected_price = best_ask_price * dec!(1.05);
+            assert!(
+                fill.avg_price <= max_expected_price,
+                "Slippage too high! Avg: {}, Max Expected: {}",
+                fill.avg_price,
+                max_expected_price
+            );
+
+            let imb = analyzer.imbalance(20);
+            assert!(
+                imb >= dec!(-1.0) && imb <= dec!(1.0),
+                "Imbalance must be normalized between -1 and 1"
+            );
+
+            println!(
+                "Analyzer integration passed. Filled {} BTC @ ~{}",
+                order_size, fill.avg_price
+            );
+        }
+        Err(e) => {
+            panic!("Failed to fetch live data for integration test: {:?}", e);
+        }
+    }
+}

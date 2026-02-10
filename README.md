@@ -127,6 +127,55 @@ flowchart LR
 
 ---
 
+## System Integration & Execution Flow
+This diagram illustrates how the `Integration` layer orchestrates the `Exchange`, `Inventory`, and `Pricing` modules to execute arbitrage strategies safely.
+
+```mermaid
+graph TD
+    subgraph Data Sources
+        CEX_API[Binance API]
+        RPC[Ethereum RPC]
+    end
+
+    subgraph Integration Layer
+        ArbChecker[Arb Checker]
+    end
+
+    subgraph Pricing Module
+        Pricing[Pricing Engine]
+    end
+
+    subgraph Exchange Module
+        ExClient[Exchange Client]
+        Book[Order Book Analyzer]
+    end
+
+    subgraph Inventory Module
+        Tracker[Inventory Tracker]
+        PnL[PnL Engine]
+    end
+
+    %% Data Flow
+    CEX_API --> ExClient
+    ExClient --> Book
+    Book --> ArbChecker
+
+    RPC --> Pricing
+    Pricing --> ArbChecker
+
+    %% Decision Logic
+    ArbChecker -- 1. Check Opportunity --> Tracker
+    Tracker -- 2. Validate Inventory --> ArbChecker
+
+    %% Execution
+    ArbChecker -- 3. Execute Trade --> ExClient
+    ExClient -- 4. Fill Report --> Tracker
+
+    Tracker -- 5. Update Position --> PnL
+```
+
+---
+
 ## Workspace Structure
 
 ```

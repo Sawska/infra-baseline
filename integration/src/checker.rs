@@ -103,8 +103,9 @@ where
         let cex_bid = ob.best_bid.0;
         let cex_ask = ob.best_ask.0;
 
-        let gap_usd = dex_price - cex_ask;
-        let gap_bps = (gap_usd / cex_ask) * dec!(10000);
+        let gap_usd = dex_price - cex_bid;
+
+        let gap_bps = (gap_usd / cex_bid) * dec!(10000);
 
         let dex_fee_bps = dec!(30.0);
         let cex_fee_bps = dec!(10.0);

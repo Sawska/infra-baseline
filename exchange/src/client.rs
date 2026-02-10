@@ -560,7 +560,7 @@ impl ExchangeClient {
         let spread_bps = if mid.is_zero() {
             Decimal::ZERO
         } else {
-            ((best_ask.0 - best_bid.0) / mid) * Decimal::new(10000, 0)
+            ((best_ask.0 - best_bid.0) * Decimal::new(10000, 0)) / mid
         };
 
         OrderBook {
@@ -571,7 +571,7 @@ impl ExchangeClient {
             best_bid,
             best_ask,
             mid_price: mid.normalize(),
-            spread_bps: spread_bps.round_dp(2),
+            spread_bps: spread_bps.normalize(),
         }
     }
 
