@@ -1,0 +1,17 @@
+[package]
+name = "strategy"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+exchange = { path = "../exchange" }
+inventory = {path = "../inventory"}
+pricing = {path = "../pricing"}
+arb-core = { path = "../core" }
+serde.workspace = true
+uuid = {version = "1.20.0", features = ["v4"]}
+alloy-primitives.workspace = true
+rust_decimal = { version = "1.0", features = ["maths"] }
+tokio.workspace = true
+async-trait.workspace = true

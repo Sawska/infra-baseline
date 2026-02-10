@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "chain", "pricing", "exchange", "inventory", "integration"]
+members = ["core", "chain", "pricing", "exchange", "inventory", "integration", "strategy"]
 resolver = "2"
 
 [workspace.package]
@@ -13,6 +13,7 @@ arb-chain = { path = "./chain" }
 pricing = { path = "./pricing" }
 exchange = {path = "./exchange"}
 inventory = {path = "./inventory"}
+strategy = {path = "./strategy"}
 
 alloy = { version = "1.5.2", features = ["full", "signer-local"] }
 alloy-primitives = { version = "1.5.4", features = ["serde"] }
