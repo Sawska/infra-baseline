@@ -1,0 +1,17 @@
+[package]
+name = "executor"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+tokio.workspace = true
+rust_decimal.workspace = true
+arb-core = { path = "../core" }
+arb-chain = { path = "../chain" }
+pricing = { path = "../pricing" }
+exchange = {path = "../exchange"}
+inventory = {path = "../inventory"}
+strategy = {path = "../strategy"}
+log = "0.4.29"

@@ -1815,6 +1815,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "executor"
+version = "0.1.0"
+dependencies = [
+ "arb-chain",
+ "arb-core",
+ "exchange",
+ "inventory",
+ "log",
+ "pricing",
+ "rust_decimal",
+ "serde",
+ "strategy",
+ "tokio",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

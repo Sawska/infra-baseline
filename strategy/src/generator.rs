@@ -80,7 +80,7 @@ impl SignalGenerator {
 
     /// Attempt to generate a signal for the given pair and size.
     pub async fn generate(&mut self, pair: &str, size: f64) -> Option<Signal> {
-        let now = self.get_now();
+        let now = SignalGenerator::get_now();
 
         if self.in_cooldown(pair, now) {
             return None;
@@ -222,7 +222,7 @@ impl SignalGenerator {
         false
     }
 
-    fn get_now(&self) -> f64 {
+    pub fn get_now() -> f64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
