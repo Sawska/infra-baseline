@@ -77,6 +77,7 @@ fn test_transaction_hashing() {
         max_fee_per_gas: Some(100_000_000_000),
         max_priority_fee: Some(1_000_000_000),
         chain_id: 1,
+        from: None,
     };
 
     let hash = tx.signing_hash();

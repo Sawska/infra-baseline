@@ -321,3 +321,53 @@ Financial correctness is enforced through layered testing:
 
 * **Failover by Default**
   Network instability is assumed. RPC clients rotate providers automatically without impacting signing or serialization.
+
+## 6. How to Seed DEX (Local Anvil Chain)
+Use these commands to fund your default Anvil wallet (0xf39Fd...) with tokens by impersonating whales.
+
+1. Get 10,000 USDC
+Bash
+```
+# 1. Impersonate a USDC Whale (Binance 14)
+cast rpc anvil_impersonateAccount 0x7713974908Be4BEd47172370115e8b1219F4A5f0 --rpc-url http://127.0.0.1:8545
+
+# 2. Transfer 10,000 USDC to your wallet
+cast send 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 \
+  "transfer(address,uint256)" \
+  0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 10000000000 \
+  --from 0x7713974908Be4BEd47172370115e8b1219F4A5f0 \
+  --unlocked \
+  --rpc-url http://127.0.0.1:8545
+
+# 3. Stop Impersonating
+cast rpc anvil_stopImpersonatingAccount 0x7713974908Be4BEd47172370115e8b1219F4A5f0 --rpc-url http://127.0.0.1:8545
+```
+2. Get 10,000 USDT
+```
+Bash
+```
+# 1. Impersonate a USDT Whale (Binance 8)
+cast rpc anvil_impersonateAccount 0xF977814e90dA44bFA03b6295A0616a897441aceC --rpc-url http://127.0.0.1:8545
+
+# 2. Transfer 10,000 USDT to your wallet
+cast send 0xdAC17F958D2ee523a2206206994597C13D831ec7 \
+  "transfer(address,uint256)" \
+  0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 10000000000 \
+  --from 0xF977814e90dA44bFA03b6295A0616a897441aceC \
+  --unlocked \
+  --rpc-url http://127.0.0.1:8545
+
+# 3. Stop Impersonating
+cast rpc anvil_stopImpersonatingAccount 0xF977814e90dA44bFA03b6295A0616a897441aceC --rpc-url http://127.0.0.1:8545
+```
+3. Wrap ETH into WETH
+
+Bash
+```
+# Wrap 10 ETH into WETH
+cast send 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2 \
+  "deposit()" \
+  --value 10ether \
+  --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+  --rpc-url http://127.0.0.1:8545
+```

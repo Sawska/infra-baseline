@@ -129,6 +129,7 @@ impl Analyzer {
 
         let mut req = arb_core::TransactionRequest {
             to: arb_core::Address(addr),
+            from: None,
             value: TokenAmount {
                 raw: U256::ZERO,
                 decimals: 18,

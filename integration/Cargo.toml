@@ -15,6 +15,13 @@ arb-core = { path = "../core" }
 pricing = { path = "../pricing" }
 exchange = {path = "../exchange"}
 inventory = {path = "../inventory"}
+alloy-sol-types = {version = "1.5.5"}
 arb-chain = { path = "../chain" }
+strategy ={ path = "../strategy" }
+executor ={ path = "../executor" }
 rust_decimal = { version = "1.0", features = ["serde-float", "serde-arbitrary-precision"] }
 serde_json = { version = "1.0", features = ["arbitrary_precision"] }
+log = "0.4.29"
+alloy-primitives = { version = "1.5.4", features = ["serde"] }
+env_logger = "0.11.8"
+warp = { version = "0.4.2", features = ["server"] }

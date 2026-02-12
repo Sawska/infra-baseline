@@ -150,7 +150,7 @@ fn check_arb(bin: &OrderBook, byb: &OrderBook, id_counter: usize) -> Option<ArbR
             buy_leg: TradeLeg {
                 id: format!("b-{}", id_counter),
                 timestamp: Utc::now(),
-                venue: Venue::Wallet, // Bybit
+                venue: Venue::Wallet,
                 symbol: "ETH/USDT".into(),
                 side: Side::Buy,
                 amount: trade_amt,
@@ -161,7 +161,7 @@ fn check_arb(bin: &OrderBook, byb: &OrderBook, id_counter: usize) -> Option<ArbR
             sell_leg: TradeLeg {
                 id: format!("s-{}", id_counter),
                 timestamp: Utc::now(),
-                venue: Venue::Cex, // Binance
+                venue: Venue::Cex,
                 symbol: "ETH/USDT".into(),
                 side: Side::Sell,
                 amount: trade_amt,

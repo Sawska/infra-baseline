@@ -1,8 +1,10 @@
+use arb_core::Address;
 use exchange::client::{ExchangeClient, ExchangeType};
 use exchange::config::ExchangeConfig;
 use executor::engine::{Executor, ExecutorConfig, ExecutorState};
 use executor::recovery::CircuitBreakerConfig;
 use inventory::tracker::InventoryTracker;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use strategy::signal::{Direction, Signal};
@@ -23,7 +25,18 @@ async fn setup_executor(config: ExecutorConfig) -> Executor {
     );
     let inventory = Arc::new(Mutex::new(InventoryTracker::new(None)));
 
-    Executor::new(exchange, inventory, Some(config))
+    let token_addresses: HashMap<String, Address> = HashMap::new();
+
+    Executor::new(
+        exchange,
+        None,
+        None,
+        token_addresses,
+        HashMap::new(),
+        inventory,
+        Some(config),
+        None,
+    )
 }
 
 fn create_test_signal(pair: &str) -> Signal {
@@ -147,6 +160,7 @@ async fn test_circuit_breaker_trips() {
         failure_threshold: 3,
         window_seconds: 60.0,
         cooldown_seconds: 60.0,
+        webhook_url: None,
     };
     let config = ExecutorConfig {
         simulation_mode: true,
@@ -188,6 +202,7 @@ async fn test_circuit_breaker_resets() {
         failure_threshold: 1,
         window_seconds: 60.0,
         cooldown_seconds: 0.1,
+        webhook_url: None,
     };
     let config = ExecutorConfig {
         simulation_mode: true,

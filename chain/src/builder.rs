@@ -94,6 +94,7 @@ impl<'a> TransactionBuilder<'a> {
 
         let mut tx = TransactionRequest {
             to,
+            from: Some(self.wallet.address()),
             value,
             data: self.data.clone(),
             nonce: Some(nonce),

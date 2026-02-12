@@ -2,6 +2,7 @@ use crate::signal::Signal;
 use inventory::tracker::InventoryTracker;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use tokio::sync::Mutex;
 
 /// Configuration for the opportunity scoring logic.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,10 +43,11 @@ impl SignalScorer {
     }
 
     /// Calculates a score from 0 to 100 for a given signal.
-    pub fn score(&self, signal: &Signal, inventory: &InventoryTracker) -> f64 {
+    pub async fn score(&self, signal: &Signal, inventory: &Mutex<InventoryTracker>) -> f64 {
+        let inventory_guard = inventory.lock().await;
         let spread_score = self.score_spread(signal.spread_bps);
         let liquidity_score = 80.0;
-        let inventory_score = self.score_inventory(signal, inventory);
+        let inventory_score = self.score_inventory(signal, &inventory_guard);
         let history_score = self.score_history(&signal.pair);
 
         let weighted = (spread_score * self.config.spread_weight)

@@ -112,6 +112,7 @@ pub struct TransactionRequest {
     pub max_fee_per_gas: Option<u128>,
     pub max_priority_fee: Option<u128>,
     pub chain_id: u64,
+    pub from: Option<Address>,
 }
 
 impl TransactionRequest {

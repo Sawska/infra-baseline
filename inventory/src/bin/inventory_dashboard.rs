@@ -128,7 +128,6 @@ fn render_tui(tracker: &InventoryTracker) {
                     let free = get_val("free");
                     let locked = get_val("locked");
 
-                    // Filter out dust/empty balances for cleaner UI
                     let free_f = free.parse::<f64>().unwrap_or(0.0);
                     let locked_f = locked.parse::<f64>().unwrap_or(0.0);
 

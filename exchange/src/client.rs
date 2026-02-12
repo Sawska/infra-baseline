@@ -296,6 +296,7 @@ impl ExchangeClient {
             .map_err(|e| ArbError::SerializationError(e.to_string()))?;
 
         if !status.is_success() {
+            log::error!("EXCHANGE API ERROR [{}]: {}", status, text);
             return Err(ArbError::SerializationError(format!(
                 "Exchange Error: {}, Body: {}",
                 status, text
@@ -367,12 +368,16 @@ impl ExchangeClient {
         amount: TokenAmount,
         price: Decimal,
     ) -> Result<OrderResult, ArbError> {
-        let symbol_clean = symbol.replace("/", "");
+        let mut symbol_clean = symbol.replace("/", "");
+        if self.exchange_type == ExchangeType::Binance {
+            symbol_clean = symbol_clean.replace("WETH", "ETH");
+        }
+        let price_str = format!("{:.2}", price);
         let (endpoint, params) = match self.exchange_type {
             ExchangeType::Binance => (
                 "/api/v3/order",
                 format!("symbol={}&side={}&type=LIMIT&timeInForce=IOC&quantity={}&price={}",
-                symbol_clean, side.to_uppercase(), amount.to_human(), price)
+                symbol_clean, side.to_uppercase(), amount.to_human(), price_str)
             ),
             ExchangeType::Bybit => (
                 "/v5/order/create",
@@ -390,7 +395,11 @@ impl ExchangeClient {
     }
 
     pub async fn fetch_order_book(&self, symbol: &str, limit: u32) -> Result<OrderBook, ArbError> {
-        let symbol_clean = symbol.replace("/", "");
+        let mut symbol_clean = symbol.replace("/", "");
+
+        if self.exchange_type == ExchangeType::Binance {
+            symbol_clean = symbol_clean.replace("WETH", "ETH");
+        }
 
         let (url, bid_key, ask_key, data_path) = match self.exchange_type {
             ExchangeType::Binance => (

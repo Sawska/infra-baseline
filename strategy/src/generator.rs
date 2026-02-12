@@ -5,8 +5,11 @@ use exchange::client::{ExchangeClient, OrderBook};
 use inventory::tracker::{InventoryTracker, Venue};
 use pricing::amm::{Pool, Token};
 use rust_decimal::prelude::*;
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex;
 
 /// Configuration for the Signal Generator
 #[derive(Debug, Clone)]
@@ -46,20 +49,46 @@ struct PriceData {
     dex_sell: f64,
 }
 
+/// Wrapper to implement Ord for Signal based on Net PnL
+#[derive(Debug)]
+struct PrioritizedSignal(Signal);
+
+impl PartialEq for PrioritizedSignal {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.expected_net_pnl == other.0.expected_net_pnl
+    }
+}
+
+impl Eq for PrioritizedSignal {}
+
+impl Ord for PrioritizedSignal {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.expected_net_pnl.total_cmp(&other.0.expected_net_pnl)
+    }
+}
+
+impl PartialOrd for PrioritizedSignal {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 pub struct SignalGenerator {
-    exchange: ExchangeClient,
-    pub inventory: InventoryTracker,
+    pub exchange: Arc<ExchangeClient>,
+    pub inventory: Arc<Mutex<InventoryTracker>>,
     fees: FeeStructure,
     pub config: GeneratorConfig,
     /// Maps pair strings (e.g., "ETH/USDT") to their AMM pool metadata
     pair_metadata: HashMap<String, PairMetadata>,
     last_signal_time: HashMap<String, f64>,
+    /// Queue for signals sorted by priority (Net PnL)
+    signal_queue: BinaryHeap<PrioritizedSignal>,
 }
 
 impl SignalGenerator {
     pub fn new(
-        exchange: ExchangeClient,
-        inventory: InventoryTracker,
+        exchange: Arc<ExchangeClient>,
+        inventory: Arc<Mutex<InventoryTracker>>,
         fees: FeeStructure,
         config: GeneratorConfig,
     ) -> Self {
@@ -70,12 +99,30 @@ impl SignalGenerator {
             config,
             pair_metadata: HashMap::new(),
             last_signal_time: HashMap::new(),
+            signal_queue: BinaryHeap::new(),
         }
     }
 
     /// Registers a pool for a specific trading pair.
     pub fn register_pair(&mut self, pair: String, metadata: PairMetadata) {
         self.pair_metadata.insert(pair, metadata);
+    }
+
+    /// Evaluates a pair and, if a valid signal is generated, adds it to the priority queue.
+    pub async fn queue_candidate(&mut self, pair: &str, size: f64) {
+        if let Some(signal) = self.generate(pair, size).await {
+            self.signal_queue.push(PrioritizedSignal(signal));
+        }
+    }
+
+    /// Returns the highest priority (highest PnL) signal from the queue.
+    pub fn pop_top_signal(&mut self) -> Option<Signal> {
+        self.signal_queue.pop().map(|wrapper| wrapper.0)
+    }
+
+    /// Clears the current signal queue.
+    pub fn clear_queue(&mut self) {
+        self.signal_queue.clear();
     }
 
     /// Attempt to generate a signal for the given pair and size.
@@ -89,7 +136,6 @@ impl SignalGenerator {
         let prices = self.fetch_prices(pair, size).await?;
 
         let spread_a = (prices.dex_sell - prices.cex_ask) / prices.cex_ask * 10_000.0;
-
         let spread_b = (prices.cex_bid - prices.dex_buy) / prices.dex_buy * 10_000.0;
 
         let (direction, spread, execution_cex, execution_dex) =
@@ -120,7 +166,9 @@ impl SignalGenerator {
             return None;
         }
 
-        let inventory_ok = self.check_inventory(pair, direction, size, execution_cex);
+        let inventory_ok = self
+            .check_inventory(pair, direction, size, execution_cex)
+            .await;
         let within_limits = trade_value <= self.config.max_position_usd;
 
         let signal = Signal::new(
@@ -142,7 +190,6 @@ impl SignalGenerator {
         self.last_signal_time.insert(pair.to_string(), now);
         Some(signal)
     }
-
     /// Fetches the latest price data for both CEX and DEX.
     async fn fetch_prices(&self, pair: &str, size: f64) -> Option<PriceData> {
         let metadata = self.pair_metadata.get(pair)?;
@@ -153,20 +200,30 @@ impl SignalGenerator {
 
         let size_u256 = self.f64_to_u256(size, metadata.base_token.decimals);
 
-        let dex_sell = metadata
+        let mut dex_sell = metadata
             .pool
             .get_execution_price(size_u256, &metadata.base_token)
             .ok()?
             .to_f64()?;
 
+        if dex_sell < 1.0 && cex_ask > 1000.0 {
+            dex_sell = 1.0 / dex_sell;
+        }
+
         let mid_price = (cex_bid + cex_ask) / 2.0;
         let quote_u256 = self.f64_to_u256(size * mid_price, metadata.quote_token.decimals);
+
         let base_out_per_quote_in = metadata
             .pool
             .get_execution_price(quote_u256, &metadata.quote_token)
             .ok()?
             .to_f64()?;
-        let dex_buy = 1.0 / base_out_per_quote_in;
+
+        let mut dex_buy = 1.0 / base_out_per_quote_in;
+
+        if dex_buy < 1.0 && cex_bid > 1000.0 {
+            dex_buy = 1.0 / dex_buy;
+        }
 
         Some(PriceData {
             cex_bid,
@@ -176,7 +233,13 @@ impl SignalGenerator {
         })
     }
 
-    fn check_inventory(&self, pair: &str, direction: Direction, size: f64, price: f64) -> bool {
+    async fn check_inventory(
+        &self,
+        pair: &str,
+        direction: Direction,
+        size: f64,
+        price: f64,
+    ) -> bool {
         let assets: Vec<&str> = pair.split('/').collect();
         if assets.len() != 2 {
             return false;
@@ -185,13 +248,12 @@ impl SignalGenerator {
 
         match direction {
             Direction::BuyCexSellDex => {
-                let quote_cex = self
-                    .inventory
+                let inventory = self.inventory.lock().await;
+                let quote_cex = inventory
                     .get_available(Venue::Cex, quote)
                     .to_f64()
                     .unwrap_or(0.0);
-                let base_dex = self
-                    .inventory
+                let base_dex = inventory
                     .get_available(Venue::Wallet, base)
                     .to_f64()
                     .unwrap_or(0.0);
@@ -199,13 +261,12 @@ impl SignalGenerator {
                 quote_cex >= size * price * 1.01 && base_dex >= size
             }
             Direction::BuyDexSellCex => {
-                let base_cex = self
-                    .inventory
+                let inventory = self.inventory.lock().await;
+                let base_cex = inventory
                     .get_available(Venue::Cex, base)
                     .to_f64()
                     .unwrap_or(0.0);
-                let quote_dex = self
-                    .inventory
+                let quote_dex = inventory
                     .get_available(Venue::Wallet, quote)
                     .to_f64()
                     .unwrap_or(0.0);

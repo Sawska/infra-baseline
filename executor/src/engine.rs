@@ -1,14 +1,49 @@
+use crate::metrics::ExecutionMetrics;
 use crate::recovery::{CircuitBreaker, CircuitBreakerConfig, ReplayProtection};
-use arb_core::types::TokenAmount;
+use alloy_primitives::{Address as AlloyAddress, Bytes, U256};
+use alloy_sol_types::{SolCall, sol};
+use arb_chain::builder::TransactionBuilder;
+use arb_chain::client::ChainClient;
+use arb_core::types::{TokenAmount, TransactionRequest};
+use arb_core::{Address, WalletManager};
 use exchange::client::ExchangeClient;
 use inventory::tracker::{InventoryTracker, Venue};
+use log::{debug, info, warn};
+use pricing::amm::Pool;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use strategy::generator::SignalGenerator;
 use strategy::signal::{Direction, Signal};
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep, timeout};
+
+sol! {
+    function approve(address spender, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+
+    function swapExactTokensForTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external returns (uint[] memory amounts);
+
+    struct ExactInputSingleParams {
+        address tokenIn;
+        address tokenOut;
+        uint24 fee;
+        address recipient;
+        uint256 deadline;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+        uint160 sqrtPriceLimitX96;
+    }
+    function exactInputSingle(ExactInputSingleParams calldata params) external payable returns (uint256 amountOut);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExecutorState {
@@ -56,7 +91,7 @@ impl ExecutionContext {
             leg2_tx_hash: None,
             leg2_fill_price: None,
             leg2_fill_size: None,
-            started_at: get_now(),
+            started_at: SignalGenerator::get_now(),
             finished_at: None,
             actual_net_pnl: None,
             error: None,
@@ -71,8 +106,10 @@ pub struct ExecutorConfig {
     pub min_fill_ratio: f64,
     pub use_flashbots: bool,
     pub simulation_mode: bool,
-    // Configuration for the internal Circuit Breaker
+    pub dex_router_v3: Option<String>,
+    pub slippage_tolerance: f64,
     pub cb_config: Option<CircuitBreakerConfig>,
+    pub dex_router_address: Option<String>,
 }
 
 impl Default for ExecutorConfig {
@@ -80,9 +117,12 @@ impl Default for ExecutorConfig {
         Self {
             leg1_timeout_sec: 5.0,
             leg2_timeout_sec: 60.0,
-            min_fill_ratio: 0.8,
+            min_fill_ratio: 0.99,
             use_flashbots: true,
             simulation_mode: true,
+            dex_router_v3: None,
+            slippage_tolerance: 0.005,
+            dex_router_address: None,
             cb_config: None,
         }
     }
@@ -99,17 +139,28 @@ struct LegResult {
 
 pub struct Executor {
     exchange: Arc<ExchangeClient>,
+    pub chain_client: Option<Arc<ChainClient>>,
+    pub wallet: Option<Arc<WalletManager>>,
+    token_addresses: HashMap<String, Address>,
+    pools: HashMap<String, Pool>,
     inventory: Arc<Mutex<InventoryTracker>>,
     config: ExecutorConfig,
     circuit_breaker: Mutex<CircuitBreaker>,
     replay_protection: Mutex<ReplayProtection>,
+    metrics: ExecutionMetrics,
 }
 
 impl Executor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         exchange: Arc<ExchangeClient>,
+        chain_client: Option<Arc<ChainClient>>,
+        wallet: Option<Arc<WalletManager>>,
+        token_addresses: HashMap<String, Address>,
+        pools: HashMap<String, Pool>,
         inventory: Arc<Mutex<InventoryTracker>>,
         config: Option<ExecutorConfig>,
+        webhook_url: Option<String>,
     ) -> Self {
         let config = config.unwrap_or_default();
 
@@ -117,18 +168,25 @@ impl Executor {
             failure_threshold: 3,
             window_seconds: 300.0,
             cooldown_seconds: 600.0,
+            webhook_url,
         });
 
         Self {
             exchange,
+            chain_client,
+            wallet,
+            token_addresses,
+            pools,
             inventory,
             config,
             circuit_breaker: Mutex::new(CircuitBreaker::new(Some(cb_config))),
             replay_protection: Mutex::new(ReplayProtection::new(60.0)),
+            metrics: ExecutionMetrics::new(),
         }
     }
 
     pub async fn execute(&self, signal: Signal) -> ExecutionContext {
+        self.metrics.execution_attempts.inc();
         let mut ctx = ExecutionContext::new(signal.clone());
 
         {
@@ -136,6 +194,7 @@ impl Executor {
             if cb.is_open() {
                 ctx.state = ExecutorState::Failed;
                 ctx.error = Some("Circuit breaker open".to_string());
+                self.metrics.execution_failure.inc();
                 return ctx;
             }
         }
@@ -145,14 +204,19 @@ impl Executor {
             if rp.is_duplicate(&signal) {
                 ctx.state = ExecutorState::Failed;
                 ctx.error = Some("Duplicate signal".to_string());
+                self.metrics.execution_failure.inc();
                 return ctx;
             }
         }
 
+        // Removed simulation short-circuit to allow leg-specific simulation logic
+
         ctx.state = ExecutorState::Validating;
         if !signal.is_valid() {
+            debug!("Invalid signal: {:?}", signal);
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("Signal invalid".to_string());
+            self.metrics.execution_failure.inc();
             return ctx;
         }
 
@@ -173,15 +237,34 @@ impl Executor {
                 cb.record_success();
             } else {
                 cb.record_failure();
+                warn!(
+                    "Circuit breaker: {}/{} failures",
+                    cb.failure_count(),
+                    cb.failure_threshold()
+                );
+
+                if cb.is_open() {
+                    warn!("Circuit breaker OPENED");
+                }
             }
         }
 
         let mut final_ctx = result_ctx;
-        final_ctx.finished_at = Some(get_now());
+        final_ctx.finished_at = Some(SignalGenerator::get_now());
+
+        if final_ctx.state == ExecutorState::Done {
+            self.metrics.execution_success.inc();
+            if let Some(pnl) = final_ctx.actual_net_pnl {
+                self.metrics.net_pnl.observe(pnl);
+            }
+        } else {
+            self.metrics.execution_failure.inc();
+            warn!("Arb Failed: {:?} Pair={}", final_ctx.error, signal.pair);
+        }
+
         final_ctx
     }
 
-    /// Helper to update inventory tracker after a trade execution
     async fn update_inventory(
         &self,
         venue_str: &str,
@@ -234,7 +317,6 @@ impl Executor {
 
     async fn execute_cex_first(&self, mut ctx: ExecutionContext) -> ExecutionContext {
         let signal = ctx.signal.clone();
-
         ctx.state = ExecutorState::Leg1Pending;
         ctx.leg1_venue = "cex".to_string();
 
@@ -248,6 +330,7 @@ impl Executor {
             Err(_) => {
                 ctx.state = ExecutorState::Failed;
                 ctx.error = Some("CEX timeout".to_string());
+                self.metrics.leg_cex_failures.inc();
                 return ctx;
             }
         };
@@ -255,12 +338,14 @@ impl Executor {
         if !leg1.success {
             ctx.state = ExecutorState::Failed;
             ctx.error = leg1.error.or(Some("CEX rejected".to_string()));
+            self.metrics.leg_cex_failures.inc();
             return ctx;
         }
 
         if leg1.filled / signal.size < self.config.min_fill_ratio {
             ctx.state = ExecutorState::Failed;
-            ctx.error = Some("Partial fill below threshold".to_string());
+            ctx.error = Some(format!("Partial fill: {} < {}", leg1.filled, signal.size));
+            self.metrics.leg_cex_failures.inc();
             return ctx;
         }
 
@@ -287,15 +372,18 @@ impl Executor {
                 self.unwind(&ctx).await;
                 ctx.state = ExecutorState::Failed;
                 ctx.error = Some("DEX timeout - unwound".to_string());
+                self.metrics.leg_dex_failures.inc();
                 return ctx;
             }
         };
 
         if !leg2.success {
+            info!("DEX Failed, Unwinding. Signal: {:?}", signal);
             ctx.state = ExecutorState::Unwinding;
             self.unwind(&ctx).await;
             ctx.state = ExecutorState::Failed;
-            ctx.error = Some("DEX failed - unwound".to_string());
+            ctx.error = Some(format!("DEX failed: {:?} - unwound", leg2.error));
+            self.metrics.leg_dex_failures.inc();
             return ctx;
         }
 
@@ -312,8 +400,6 @@ impl Executor {
 
     async fn execute_dex_first(&self, mut ctx: ExecutionContext) -> ExecutionContext {
         let signal = ctx.signal.clone();
-
-        // Leg 1: DEX
         ctx.state = ExecutorState::Leg1Pending;
         ctx.leg1_venue = "dex".to_string();
 
@@ -327,13 +413,15 @@ impl Executor {
             Err(_) => {
                 ctx.state = ExecutorState::Failed;
                 ctx.error = Some("DEX timeout".to_string());
+                self.metrics.leg_dex_failures.inc();
                 return ctx;
             }
         };
 
         if !leg1.success {
             ctx.state = ExecutorState::Failed;
-            ctx.error = Some("DEX failed (no cost via Flashbots)".to_string());
+            ctx.error = Some(format!("DEX failed: {:?}", leg1.error));
+            self.metrics.leg_dex_failures.inc();
             return ctx;
         }
 
@@ -360,6 +448,7 @@ impl Executor {
                 self.unwind(&ctx).await;
                 ctx.state = ExecutorState::Failed;
                 ctx.error = Some("CEX timeout after DEX - unwound".to_string());
+                self.metrics.leg_cex_failures.inc();
                 return ctx;
             }
         };
@@ -369,6 +458,7 @@ impl Executor {
             self.unwind(&ctx).await;
             ctx.state = ExecutorState::Failed;
             ctx.error = Some("CEX failed after DEX - unwound".to_string());
+            self.metrics.leg_cex_failures.inc();
             return ctx;
         }
 
@@ -387,34 +477,35 @@ impl Executor {
         let actual_size = size.unwrap_or(signal.size);
 
         if self.config.simulation_mode {
-            if signal.pair.contains("CEXFAIL") {
+            sleep(Duration::from_millis(100)).await;
+
+            if signal.pair.starts_with("CEXFAIL") {
                 return LegResult {
                     success: false,
                     price: 0.0,
                     filled: 0.0,
                     order_id: None,
                     tx_hash: None,
-                    error: Some("Simulated CEX Failure".to_string()),
+                    error: Some("Simulated CEX failure".to_string()),
                 };
             }
-            if signal.pair.contains("PARTIAL") {
-                sleep(Duration::from_millis(100)).await;
+
+            if signal.pair.starts_with("PARTIAL") {
                 return LegResult {
                     success: true,
-                    price: signal.cex_price * 1.0001,
-                    filled: actual_size * 0.5, // Return 50% fill
-                    order_id: Some("sim-cex-partial".to_string()),
+                    price: signal.cex_price,
+                    filled: actual_size * 0.5,
+                    order_id: Some(format!("sim-partial-{}", SignalGenerator::get_now() as u64)),
                     tx_hash: None,
                     error: None,
                 };
             }
 
-            sleep(Duration::from_millis(100)).await;
             return LegResult {
                 success: true,
-                price: signal.cex_price * 1.0001,
+                price: signal.cex_price,
                 filled: actual_size,
-                order_id: Some("sim-cex-order".to_string()),
+                order_id: Some(format!("sim-cex-{}", SignalGenerator::get_now() as u64)),
                 tx_hash: None,
                 error: None,
             };
@@ -425,17 +516,16 @@ impl Executor {
         } else {
             "sell"
         };
-        let price_multiplier = if side == "buy" { 1.001 } else { 0.999 };
+        let price_multiplier = if side == "buy" { 1.002 } else { 0.998 };
         let limit_price =
             Decimal::from_f64(signal.cex_price * price_multiplier).unwrap_or(Decimal::ZERO);
         let amount = TokenAmount::from_human(&actual_size.to_string(), 8, None).unwrap();
 
-        let result = self
+        match self
             .exchange
             .create_limit_ioc_order(&signal.pair, side, amount, limit_price)
-            .await;
-
-        match result {
+            .await
+        {
             Ok(order) => LegResult {
                 success: order.status == "filled",
                 price: order.avg_fill_price.to_f64().unwrap_or(0.0),
@@ -461,36 +551,352 @@ impl Executor {
 
     async fn execute_dex_leg(&self, signal: &Signal, size: f64) -> LegResult {
         if self.config.simulation_mode {
-            if signal.pair.contains("DEXFAIL") {
+            sleep(Duration::from_millis(100)).await;
+
+            if signal.pair.starts_with("DEXFAIL") {
                 return LegResult {
                     success: false,
                     price: 0.0,
                     filled: 0.0,
                     order_id: None,
                     tx_hash: None,
-                    error: Some("Simulated DEX Failure".to_string()),
+                    error: Some("Simulated DEX failure".to_string()),
                 };
             }
 
-            sleep(Duration::from_millis(500)).await;
+            if signal.pair.starts_with("PARTIAL") {
+                return LegResult {
+                    success: true,
+                    price: signal.dex_price,
+                    filled: size * 0.5,
+                    order_id: None,
+                    tx_hash: Some("0xsimulatedpartial".to_string()),
+                    error: None,
+                };
+            }
+
             return LegResult {
                 success: true,
-                price: signal.dex_price * 0.9998,
+                price: signal.dex_price,
                 filled: size,
                 order_id: None,
                 tx_hash: Some("0xsimulatedhash".to_string()),
                 error: None,
             };
         }
+        let client = match &self.chain_client {
+            Some(c) => c,
+            None => {
+                return LegResult {
+                    success: false,
+                    price: 0.0,
+                    filled: 0.0,
+                    order_id: None,
+                    tx_hash: None,
+                    error: Some("ChainClient missing".to_string()),
+                };
+            }
+        };
 
-        LegResult {
-            success: false,
-            price: 0.0,
-            filled: 0.0,
-            order_id: None,
-            tx_hash: None,
-            error: Some("Real DEX execution requires Week 2 integration".to_string()),
+        let wallet = match &self.wallet {
+            Some(w) => w,
+            None => {
+                return LegResult {
+                    success: false,
+                    price: 0.0,
+                    filled: 0.0,
+                    order_id: None,
+                    tx_hash: None,
+                    error: Some("Wallet missing".to_string()),
+                };
+            }
+        };
+
+        let parts: Vec<&str> = signal.pair.split('/').collect();
+        if parts.len() != 2 {
+            return LegResult {
+                success: false,
+                price: 0.0,
+                filled: 0.0,
+                order_id: None,
+                tx_hash: None,
+                error: Some("Invalid pair fmt".to_string()),
+            };
         }
+        let (base_sym, quote_sym) = (parts[0], parts[1]);
+
+        let (token_in_sym, token_out_sym) = match signal.direction {
+            Direction::BuyCexSellDex => (base_sym, quote_sym),
+            Direction::BuyDexSellCex => (quote_sym, base_sym),
+        };
+
+        let t_in = match self.token_addresses.get(token_in_sym) {
+            Some(a) => a,
+            None => {
+                return LegResult {
+                    success: false,
+                    price: 0.0,
+                    filled: 0.0,
+                    order_id: None,
+                    tx_hash: None,
+                    error: Some(format!("Token not found: {}", token_in_sym)),
+                };
+            }
+        };
+        let t_out = match self.token_addresses.get(token_out_sym) {
+            Some(a) => a,
+            None => {
+                return LegResult {
+                    success: false,
+                    price: 0.0,
+                    filled: 0.0,
+                    order_id: None,
+                    tx_hash: None,
+                    error: Some(format!("Token not found: {}", token_out_sym)),
+                };
+            }
+        };
+
+        let token_in_addr = AlloyAddress::from(*t_in.0);
+        let token_out_addr = AlloyAddress::from(*t_out.0);
+
+        let pool = self.pools.get(&signal.pair);
+        let is_v3 = matches!(pool, Some(Pool::V3(_)));
+
+        let router_addr_str = if is_v3 {
+            self.config.dex_router_v3.as_deref().unwrap_or("")
+        } else {
+            self.config.dex_router_address.as_deref().unwrap_or("")
+        };
+
+        if router_addr_str.is_empty() {
+            return LegResult {
+                success: false,
+                price: 0.0,
+                filled: 0.0,
+                order_id: None,
+                tx_hash: None,
+                error: Some("Router address missing".to_string()),
+            };
+        }
+
+        let router_addr = match Address::from_string(router_addr_str) {
+            Ok(a) => a,
+            Err(_) => {
+                return LegResult {
+                    success: false,
+                    price: 0.0,
+                    filled: 0.0,
+                    order_id: None,
+                    tx_hash: None,
+                    error: Some("Invalid router address".to_string()),
+                };
+            }
+        };
+
+        let decimals = if let Some(p) = pool {
+            let (t0, t1) = p.tokens();
+            if t0.address == *t_in {
+                t0.decimals
+            } else {
+                t1.decimals
+            }
+        } else {
+            18
+        };
+        let amount_in_u256 = U256::from((size * 10f64.powi(decimals as i32)).round() as u128);
+
+        let amount_out_min = if let Some(p) = pool {
+            let (t0, t1) = p.tokens();
+            let token_in_ref = if t0.address == *t_in { &t0 } else { &t1 };
+
+            match p.get_amount_out(amount_in_u256, token_in_ref) {
+                Ok(expected) => {
+                    let bps = (self.config.slippage_tolerance * 10000.0) as u64;
+                    let factor = U256::from(10000_u64.saturating_sub(bps));
+                    expected.checked_mul(factor).unwrap_or(U256::ZERO) / U256::from(10000)
+                }
+                Err(e) => {
+                    warn!("Failed to calculate output for slippage: {}", e);
+                    U256::ZERO
+                }
+            }
+        } else {
+            U256::ZERO
+        };
+
+        if let Err(e) = self
+            .ensure_allowance(client, wallet, *t_in, router_addr, amount_in_u256)
+            .await
+        {
+            return LegResult {
+                success: false,
+                price: 0.0,
+                filled: 0.0,
+                order_id: None,
+                tx_hash: None,
+                error: Some(format!("Allowance failed: {}", e)),
+            };
+        }
+
+        let deadline = U256::from(SignalGenerator::get_now() as u64 + 300);
+        let calldata = if is_v3 {
+            let pool_v3 = match pool {
+                Some(Pool::V3(p)) => p,
+                _ => {
+                    return LegResult {
+                        success: false,
+                        price: 0.0,
+                        filled: 0.0,
+                        order_id: None,
+                        tx_hash: None,
+                        error: Some("Pool mismatch".into()),
+                    };
+                }
+            };
+            let fee = pool_v3.fee;
+
+            let params = ExactInputSingleParams {
+                tokenIn: token_in_addr,
+                tokenOut: token_out_addr,
+                fee: alloy_primitives::Uint::from(fee),
+                recipient: AlloyAddress::from(*wallet.address().0),
+                deadline,
+                amountIn: amount_in_u256,
+                amountOutMinimum: amount_out_min,
+                sqrtPriceLimitX96: alloy_primitives::U160::ZERO,
+            };
+            exactInputSingleCall { params }.abi_encode()
+        } else {
+            let path = vec![token_in_addr, token_out_addr];
+            swapExactTokensForTokensCall {
+                amountIn: amount_in_u256,
+                amountOutMin: amount_out_min,
+                path,
+                to: AlloyAddress::from(*wallet.address().0),
+                deadline,
+            }
+            .abi_encode()
+        };
+
+        // --- CHANGED: Use gas_limit instead of estimate to bypass "from: None" RPC error
+        let builder = TransactionBuilder::new(client, wallet)
+            .to(router_addr)
+            .data(calldata)
+            .gas_limit(500_000)
+            .with_gas_price("high");
+
+        match builder.send_and_wait().await {
+            Ok(receipt) => {
+                if receipt.status {
+                    LegResult {
+                        success: true,
+                        price: signal.dex_price,
+                        filled: size,
+                        order_id: None,
+                        tx_hash: Some(receipt.tx_hash),
+                        error: None,
+                    }
+                } else {
+                    LegResult {
+                        success: false,
+                        price: 0.0,
+                        filled: 0.0,
+                        order_id: None,
+                        tx_hash: Some(receipt.tx_hash),
+                        error: Some("Tx Reverted".to_string()),
+                    }
+                }
+            }
+            Err(e) => LegResult {
+                success: false,
+                price: 0.0,
+                filled: 0.0,
+                order_id: None,
+                tx_hash: None,
+                error: Some(format!("Tx Failed: {:?}", e)),
+            },
+        }
+    }
+
+    async fn ensure_allowance(
+        &self,
+        client: &ChainClient,
+        wallet: &WalletManager,
+        token: Address,
+        spender: Address,
+        amount: U256,
+    ) -> Result<(), String> {
+        let owner_alloy = AlloyAddress::from(*wallet.address().0);
+        let spender_alloy = AlloyAddress::from(*spender.0);
+
+        let call = allowanceCall {
+            owner: owner_alloy,
+            spender: spender_alloy,
+        };
+
+        let req = TransactionRequest {
+            to: token,
+            from: Some(wallet.address()),
+            value: TokenAmount {
+                raw: U256::ZERO,
+                decimals: 18,
+                symbol: None,
+            },
+            data: Bytes::from(call.abi_encode()),
+            chain_id: 1,
+            nonce: None,
+            gas_limit: None,
+            max_fee_per_gas: None,
+            max_priority_fee: None,
+        };
+
+        let res = client
+            .call(&req, None)
+            .await
+            .map_err(|e| format!("{:?}", e))?;
+        let current_allowance =
+            allowanceCall::abi_decode_returns(&res).map_err(|_| "Decode fail on allowance")?;
+
+        if current_allowance < amount {
+            if current_allowance > U256::ZERO {
+                info!("Resetting USDT allowance for {:?}", token);
+                let reset_data = approveCall {
+                    spender: spender_alloy,
+                    amount: U256::ZERO,
+                }
+                .abi_encode();
+
+                let _ = TransactionBuilder::new(client, wallet)
+                    .to(token)
+                    .data(reset_data)
+                    .gas_limit(100_000)
+                    .send_and_wait()
+                    .await;
+            }
+
+            info!("Setting infinite approval for {:?}", token);
+            let approve_data = approveCall {
+                spender: spender_alloy,
+                amount: U256::MAX,
+            }
+            .abi_encode();
+
+            // --- CHANGED: Use gas_limit here as well
+            let receipt = TransactionBuilder::new(client, wallet)
+                .to(token)
+                .data(approve_data)
+                .gas_limit(100_000)
+                .send_and_wait()
+                .await
+                .map_err(|e| format!("Approve failed: {:?}", e))?;
+
+            if !receipt.status {
+                return Err("Approve reverted on-chain".to_string());
+            }
+            info!("Approval confirmed: {}", receipt.tx_hash);
+        }
+        Ok(())
     }
 
     async fn unwind(&self, _ctx: &ExecutionContext) {
@@ -498,7 +904,10 @@ impl Executor {
             sleep(Duration::from_millis(100)).await;
             return;
         }
-        log::error!("Real unwind not implemented");
+        warn!(
+            "Unwind triggered! Manual intervention needed for pair {}",
+            _ctx.signal.pair
+        );
     }
 
     fn calculate_pnl(&self, ctx: &ExecutionContext) -> f64 {
@@ -518,14 +927,11 @@ impl Executor {
             (leg1_price - leg2_price) * size
         };
 
-        let fees = size * leg1_price * 0.004;
-        gross - fees
+        gross - (size * leg1_price * 0.002)
     }
-}
 
-fn get_now() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs_f64()
+    pub async fn is_circuit_open(&self) -> bool {
+        let mut cb = self.circuit_breaker.lock().await;
+        cb.is_open()
+    }
 }

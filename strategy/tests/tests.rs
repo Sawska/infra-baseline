@@ -7,10 +7,12 @@ use inventory::tracker::{InventoryTracker, Venue};
 use pricing::amm::{Pool, Token, UniswapV2Pair};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
+use std::sync::Arc;
 use strategy::fees::FeeStructure;
 use strategy::generator::{GeneratorConfig, PairMetadata, SignalGenerator};
 use strategy::scorer::{ScorerConfig, SignalScorer};
 use strategy::signal::{Direction, Signal};
+use tokio::sync::Mutex;
 
 /// Helper to setup a generator instance for testing.
 async fn setup_mock_generator() -> SignalGenerator {
@@ -23,11 +25,11 @@ async fn setup_mock_generator() -> SignalGenerator {
     let client = ExchangeClient::new(config, ExchangeType::Binance)
         .await
         .unwrap();
-    let inventory = InventoryTracker::new(None);
+    let inventory = Arc::new(Mutex::new(InventoryTracker::new(None)));
     let fees = FeeStructure::default();
     let gen_config = GeneratorConfig::default();
 
-    SignalGenerator::new(client, inventory, fees, gen_config)
+    SignalGenerator::new(Arc::new(client), inventory, fees, gen_config)
 }
 
 /// Helper to create mock AMM metadata for ETH/USDC.
@@ -62,8 +64,11 @@ async fn test_generate_signal_profitable() {
     let mut cex_balances = HashMap::new();
     cex_balances.insert("USDC".to_string(), (Decimal::from(50000), Decimal::ZERO));
     cex_balances.insert("ETH".to_string(), (Decimal::from(10), Decimal::ZERO));
+
     generator
         .inventory
+        .lock()
+        .await
         .update_from_cex(Venue::Cex, cex_balances);
 
     let signal = generator.generate(pair, 1.0).await;
@@ -105,8 +110,11 @@ async fn test_cooldown_prevents_rapid_signals() {
     let mut balances = HashMap::new();
     balances.insert("USDC".to_string(), (Decimal::from(100000), Decimal::ZERO));
     balances.insert("ETH".to_string(), (Decimal::from(100), Decimal::ZERO));
+
     generator
         .inventory
+        .lock()
+        .await
         .update_from_cex(Venue::Cex, balances.clone());
 
     let _ = generator.generate(pair, 1.0).await;
@@ -127,8 +135,11 @@ async fn test_direction_selection() {
     let mut balances = HashMap::new();
     balances.insert("USDC".to_string(), (Decimal::from(100000), Decimal::ZERO));
     balances.insert("ETH".to_string(), (Decimal::from(100), Decimal::ZERO));
+
     generator
         .inventory
+        .lock()
+        .await
         .update_from_cex(Venue::Cex, balances.clone());
 
     let signal = generator.generate(pair, 1.0).await;
@@ -150,7 +161,7 @@ async fn test_score_high_spread() {
         ..Default::default()
     };
     let scorer = SignalScorer::new(Some(config));
-    let inventory = InventoryTracker::new(None);
+    let inventory = Mutex::new(InventoryTracker::new(None));
 
     let signal = Signal::new(
         "ETH/USDC".to_string(),
@@ -168,7 +179,7 @@ async fn test_score_high_spread() {
         true,
     );
 
-    let score = scorer.score(&signal, &inventory);
+    let score = scorer.score(&signal, &inventory).await;
     assert!(score >= 90.0);
 }
 
@@ -182,7 +193,7 @@ async fn test_score_inventory_penalty() {
         ..Default::default()
     };
     let scorer = SignalScorer::new(Some(config));
-    let mut inventory = InventoryTracker::new(None);
+    let inventory = Mutex::new(InventoryTracker::new(None));
 
     let signal = Signal::new(
         "ETH/USDC".to_string(),
@@ -202,16 +213,19 @@ async fn test_score_inventory_penalty() {
 
     let mut cex_balances = HashMap::new();
     cex_balances.insert("ETH".to_string(), (Decimal::from(5), Decimal::ZERO));
-    inventory.update_from_cex(Venue::Cex, cex_balances);
+    inventory
+        .lock()
+        .await
+        .update_from_cex(Venue::Cex, cex_balances);
 
     let wallet_eth = TokenAmount::from_human("5", 18, Some("ETH".to_string())).unwrap();
-    inventory.update_from_wallet(vec![wallet_eth]);
+    inventory.lock().await.update_from_wallet(vec![wallet_eth]);
 
-    let good_score = scorer.score(&signal, &inventory);
+    let good_score = scorer.score(&signal, &inventory).await;
 
-    inventory.update_from_wallet(vec![]);
+    inventory.lock().await.update_from_wallet(vec![]);
 
-    let penalty_score = scorer.score(&signal, &inventory);
+    let penalty_score = scorer.score(&signal, &inventory).await;
 
     assert!(
         penalty_score < good_score,

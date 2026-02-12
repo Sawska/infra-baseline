@@ -24,6 +24,7 @@ impl Balance {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct InventoryTracker {
     /// Tracks which wallet address this tracker is associated with
     pub wallet_address: Option<Address>,

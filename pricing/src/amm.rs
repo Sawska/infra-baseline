@@ -270,6 +270,7 @@ impl UniswapV2Pair {
     fn make_req(to: Address, data: Vec<u8>) -> TransactionRequest {
         TransactionRequest {
             to,
+            from: None,
             value: TokenAmount {
                 raw: U256::ZERO,
                 decimals: 18,
