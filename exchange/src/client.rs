@@ -40,7 +40,6 @@ impl RateLimiter {
     /// This prevents our local state from drifting away from the exchange's server-side state.
     pub async fn update_from_headers(&self, used_weight: f64) {
         let mut tokens = self.tokens.lock().await;
-        // Remaining tokens is Capacity - Used
         let remaining = (self.capacity - used_weight).max(0.0);
         *tokens = remaining;
     }

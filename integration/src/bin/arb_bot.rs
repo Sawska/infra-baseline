@@ -20,7 +20,6 @@ use std::time::Duration;
 use strategy::fees::FeeStructure;
 use strategy::generator::{GeneratorConfig, PairMetadata, SignalGenerator};
 use strategy::scorer::{ScorerConfig, SignalScorer};
-use strategy::signal::Direction;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use warp::Filter;
@@ -241,10 +240,6 @@ impl ArbBot {
             )
         };
 
-        info!("{}", usdc_bal);
-        info!("{}", usdt_bal);
-        info!("{}", eth_bal);
-
         if usdc_bal > 5000.0 {
             if eth_bal < 5.0 {
                 info!(
@@ -334,43 +329,30 @@ impl ArbBot {
             warn!("Rebalance check failed: {:?}", e);
         }
 
+        self.generator.clear_queue();
+
         for pair in &self.pairs {
-            let signal_opt = self.generator.generate(pair, self.trade_size).await;
+            self.generator.queue_candidate(pair, self.trade_size).await;
+        }
 
-            if let Some(mut signal) = signal_opt {
-                signal.score = self.scorer.score(&signal, &self.generator.inventory).await;
+        if let Some(best_signal) = self.generator.pop_top_signal() {
+            info!(
+                "Executing best signal: {} spread={:.1}bps",
+                best_signal.pair, best_signal.spread_bps
+            );
 
-                if signal.score < 60.0 {
-                    info!("Skipped: score below threshold (score={:.0})", signal.score);
-                    continue;
-                }
+            let ctx = self.executor.execute(best_signal.clone()).await;
+            let success = ctx.state == ExecutorState::Done;
 
-                info!(
-                    "Signal: {} spread={:.1}bps score={:.0}",
-                    signal.pair, signal.spread_bps, signal.score
+            self.scorer.record_result(best_signal.pair.clone(), success);
+
+            if success {
+                info!("SUCCESS: PnL=${:.2}", ctx.actual_net_pnl.unwrap_or(0.0));
+            } else {
+                warn!(
+                    "FAILED: {:?}",
+                    ctx.error.as_deref().unwrap_or("Unknown error")
                 );
-
-                let base = signal.pair.split('/').next().unwrap_or("UNKNOWN");
-                let direction = match signal.direction {
-                    Direction::BuyCexSellDex => "BUY_CEX_SELL_DEX",
-                    Direction::BuyDexSellCex => "BUY_DEX_SELL_CEX",
-                };
-
-                info!("Executing: {} {:.4} {}", direction, signal.size, base);
-
-                let ctx = self.executor.execute(signal.clone()).await;
-                let success = ctx.state == ExecutorState::Done;
-
-                self.scorer.record_result(signal.pair.clone(), success);
-
-                if success {
-                    info!("SUCCESS: PnL=${:.2}", ctx.actual_net_pnl.unwrap_or(0.0));
-                } else {
-                    warn!(
-                        "FAILED: {:?}",
-                        ctx.error.as_deref().unwrap_or("Unknown error")
-                    );
-                }
             }
         }
 
@@ -424,15 +406,11 @@ async fn main() {
         "USDC".to_string(),
         Address::from_string("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
     );
-    token_addresses.insert(
-        "BTC".to_string(),
-        Address::from_string("0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599").unwrap(),
-    );
 
     let config = BotConfig {
         pairs: vec!["WETH/USDT".to_string(), "WETH/USDC".to_string()],
         trade_size: 0.1,
-        simulation: false,
+        simulation: true,
         webhook_url: Some("http://127.0.0.1:3031/webhook".to_string()),
         dex_router: Some("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D".to_string()),
         dex_pools,
