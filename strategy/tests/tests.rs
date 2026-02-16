@@ -20,7 +20,7 @@ async fn setup_mock_generator() -> SignalGenerator {
         api_key: "test".to_string(),
         secret: "test".to_string(),
         is_sandbox: true,
-        skip_connection_validation: false,
+        skip_connection_validation: true,
     };
 
     let client = ExchangeClient::new(config, ExchangeType::Binance)
