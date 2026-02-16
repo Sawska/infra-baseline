@@ -331,20 +331,53 @@ impl ArbBot {
 
         self.generator.clear_queue();
 
+        // 1. Generate candidates for all pairs (populates generator's internal queue sorted by PnL)
         for pair in &self.pairs {
             self.generator.queue_candidate(pair, self.trade_size).await;
         }
 
-        if let Some(best_signal) = self.generator.pop_top_signal() {
+        // 2. Drain all signals from the generator to re-evaluate them
+        let mut candidates = Vec::new();
+        while let Some(signal) = self.generator.pop_top_signal() {
+            candidates.push(signal);
+        }
+
+        if candidates.is_empty() {
+            return Ok(());
+        }
+
+        // 3. Score all candidates using the multi-factor scorer
+        // This overrides the simple "spread/100" score with a robust multi-factor score
+        for signal in &mut candidates {
+            let new_score = self.scorer.score(signal, &self.shared_inventory).await;
+            signal.score = new_score;
+        }
+
+        // 4. Sort by the new multi-factor score (descending)
+        candidates.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // 5. Select and execute the best signal based on the new score
+        if let Some(best_signal) = candidates.first() {
             info!(
-                "Executing best signal: {} spread={:.1}bps",
-                best_signal.pair, best_signal.spread_bps
+                "Executing best signal: {} score={:.1} spread={:.1}bps PnL=${:.2}",
+                best_signal.pair,
+                best_signal.score,
+                best_signal.spread_bps,
+                best_signal.expected_net_pnl
             );
 
-            let ctx = self.executor.execute(best_signal.clone()).await;
+            // Clone signal for execution to release borrow on candidates
+            let signal_to_execute = best_signal.clone();
+
+            let ctx = self.executor.execute(signal_to_execute.clone()).await;
             let success = ctx.state == ExecutorState::Done;
 
-            self.scorer.record_result(best_signal.pair.clone(), success);
+            self.scorer
+                .record_result(signal_to_execute.pair.clone(), success);
 
             if success {
                 info!("SUCCESS: PnL=${:.2}", ctx.actual_net_pnl.unwrap_or(0.0));

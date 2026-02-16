@@ -73,10 +73,17 @@ impl SignalScorer {
         let assets: Vec<&str> = signal.pair.split('/').collect();
         let base = assets.first().unwrap_or(&"");
 
+        // Logic Check: ensure base is valid before query
+        if base.is_empty() {
+            return 50.0;
+        }
+
         let skew_data = inventory.skew(base);
         let needs_rebalance = skew_data["needs_rebalance"].as_bool().unwrap_or(false);
 
-        if needs_rebalance { 20.0 } else { 60.0 }
+        // If we need to rebalance, this signal is less attractive unless it helps rebalance (not logic here yet)
+        // Simple logic: penalize signals on assets that are already skewed/risky
+        if needs_rebalance { 20.0 } else { 80.0 }
     }
 
     fn score_history(&self, pair: &str) -> f64 {
