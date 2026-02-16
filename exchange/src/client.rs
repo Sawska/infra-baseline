@@ -182,7 +182,10 @@ impl ExchangeClient {
             rate_limiter: RateLimiter::new(rate_limit),
         };
 
-        exchange.validate_connection().await?;
+        if !exchange.config.skip_connection_validation {
+            exchange.validate_connection().await?;
+        }
+
         Ok(exchange)
     }
 

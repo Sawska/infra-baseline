@@ -35,6 +35,7 @@ async fn get_test_client(exchange: ExchangeType) -> ExchangeClient {
         api_key: "test_key".into(),
         secret: "test_secret".into(),
         is_sandbox: true,
+        skip_connection_validation: false,
     };
 
     let (base_url, ws_url) = match exchange {

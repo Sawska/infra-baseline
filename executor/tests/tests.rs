@@ -17,6 +17,7 @@ async fn setup_executor(config: ExecutorConfig) -> Executor {
         api_key: "test".to_string(),
         secret: "test".to_string(),
         is_sandbox: true,
+        skip_connection_validation: true,
     };
     let exchange = Arc::new(
         ExchangeClient::new(ex_config, ExchangeType::Binance)

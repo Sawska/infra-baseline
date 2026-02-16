@@ -6,6 +6,7 @@ pub struct ExchangeConfig {
     pub api_key: String,
     pub secret: String,
     pub is_sandbox: bool,
+    pub skip_connection_validation: bool,
 }
 
 impl ExchangeConfig {
@@ -25,6 +26,7 @@ impl ExchangeConfig {
             secret: env::var(secret_name)
                 .with_context(|| format!("Variable {} not found in .env", secret_name))?,
             is_sandbox,
+            skip_connection_validation: false,
         })
     }
 }
