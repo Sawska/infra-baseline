@@ -373,6 +373,7 @@ impl ExchangeClient {
         let mut symbol_clean = symbol.replace("/", "");
         if self.exchange_type == ExchangeType::Binance {
             symbol_clean = symbol_clean.replace("WETH", "ETH");
+            symbol_clean = symbol_clean.replace("WBTC", "BTC");
         }
         let price_str = format!("{:.2}", price);
         let (endpoint, params) = match self.exchange_type {
@@ -401,6 +402,7 @@ impl ExchangeClient {
 
         if self.exchange_type == ExchangeType::Binance {
             symbol_clean = symbol_clean.replace("WETH", "ETH");
+            symbol_clean = symbol_clean.replace("WBTC", "BTC");
         }
 
         let (url, bid_key, ask_key, data_path) = match self.exchange_type {

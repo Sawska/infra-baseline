@@ -2,11 +2,16 @@ use arb_core::Address;
 use exchange::client::{ExchangeClient, ExchangeType};
 use exchange::config::ExchangeConfig;
 use executor::engine::{Executor, ExecutorConfig, ExecutorState};
+use executor::kill_switch::AutoKillSwitch;
+use executor::monitoring;
+use executor::position_limits::{RiskLimits, RiskManager};
 use executor::recovery::CircuitBreakerConfig;
+use executor::telegram_alert::TelegramAlert;
+use executor::validator::PreTradeValidator;
 use inventory::tracker::InventoryTracker;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use strategy::signal::{Direction, Signal};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
@@ -18,6 +23,15 @@ async fn setup_executor(config: ExecutorConfig) -> Executor {
         secret: "test".to_string(),
         is_sandbox: true,
         skip_connection_validation: true,
+        production: false,
+        binance_http_url: "test".into(),
+        binance_ws_url: "test".into(),
+        cex_fee_bps: 0.0,
+        arbitrum_rpc_url: "test".into(),
+        arbitrum_chain_id: 0,
+        pair: "test".into(),
+        weth_address: "test".into(),
+        usdc_address: "test".into(),
     };
     let exchange = Arc::new(
         ExchangeClient::new(ex_config, ExchangeType::Binance)
@@ -255,4 +269,301 @@ async fn test_replay_allows_new() {
     let ctx2 = executor.execute(signal2).await;
 
     assert_eq!(ctx2.state, ExecutorState::Done);
+}
+
+#[test]
+fn test_risk_manager_trade_size_limits() {
+    let limits = RiskLimits {
+        max_trade_usd: 100.0,
+        max_trade_pct: 0.10,
+        ..Default::default()
+    };
+    let manager = RiskManager::new(limits, 1000.0);
+
+    let mut signal = create_test_signal("ETH/USDC");
+    signal.size = 1.0;
+    signal.cex_price = 150.0;
+    let (allowed, reason) = manager.check_pre_trade(&signal);
+    assert!(!allowed, "Should be rejected due to fixed USD limit");
+    assert!(reason.contains("exceeds max $100.00"));
+
+    let limits_pct = RiskLimits {
+        max_trade_usd: 5000.0,
+        max_trade_pct: 0.10,
+        ..Default::default()
+    };
+    let manager_pct = RiskManager::new(limits_pct, 1000.0);
+
+    let mut signal2 = create_test_signal("ETH/USDC");
+    signal2.size = 1.0;
+    signal2.cex_price = 200.0;
+    let (allowed2, reason2) = manager_pct.check_pre_trade(&signal2);
+    assert!(!allowed2, "Should be rejected due to % capital limit");
+    assert!(reason2.contains("exceeds 10.0% of capital"));
+
+    signal2.cex_price = 50.0;
+    let (allowed3, _) = manager_pct.check_pre_trade(&signal2);
+    assert!(allowed3, "Valid trade should pass");
+}
+
+#[test]
+fn test_risk_manager_daily_loss_limit() {
+    let limits = RiskLimits {
+        max_trade_usd: 10_000.0,
+        max_trade_pct: 1.0,
+        max_daily_loss: 50.0,
+        ..Default::default()
+    };
+    let mut manager = RiskManager::new(limits, 1000.0);
+    let mut signal = create_test_signal("ETH/USDC");
+    signal.size = 0.1;
+
+    manager.record_trade(-30.0);
+    assert!(
+        manager.check_pre_trade(&signal).0,
+        "Should allow trade after small loss"
+    );
+
+    manager.record_trade(-25.0);
+    let (allowed, reason) = manager.check_pre_trade(&signal);
+    assert!(!allowed, "Should reject after crossing daily loss limit");
+    assert!(reason.contains("Daily loss limit"));
+}
+
+#[test]
+fn test_risk_manager_consecutive_losses() {
+    let limits = RiskLimits {
+        max_trade_usd: 10_000.0,
+        max_daily_loss: 1_000.0,
+        max_trade_pct: 1.0,
+        consecutive_loss_limit: 2,
+        ..Default::default()
+    };
+
+    let mut manager = RiskManager::new(limits, 1000.0);
+    let mut signal = create_test_signal("ETH/USDC");
+    signal.size = 0.1;
+
+    manager.record_trade(-10.0);
+    assert!(manager.check_pre_trade(&signal).0);
+
+    manager.record_trade(-10.0);
+    let (allowed, reason) = manager.check_pre_trade(&signal);
+    assert!(
+        !allowed,
+        "Should be rejected after hitting consecutive loss limit"
+    );
+    assert!(reason.contains("Consecutive loss limit"));
+
+    manager.record_trade(50.0);
+    assert!(
+        manager.check_pre_trade(&signal).0,
+        "Should be allowed after a win"
+    );
+}
+
+#[test]
+fn test_risk_manager_drawdown_limit() {
+    let limits = RiskLimits {
+        max_trade_usd: 10_000.0,
+        max_trade_pct: 1.0,
+        max_drawdown_pct: 0.20,
+        ..Default::default()
+    };
+
+    let mut manager = RiskManager::new(limits, 1000.0);
+    let mut signal = create_test_signal("ETH/USDC");
+    signal.size = 0.1;
+
+    manager.record_trade(500.0);
+
+    manager.record_trade(-200.0);
+    assert!(manager.check_pre_trade(&signal).0);
+
+    manager.record_trade(-200.0);
+    let (allowed, reason) = manager.check_pre_trade(&signal);
+    assert!(!allowed);
+    assert!(reason.contains("Drawdown"));
+}
+
+#[test]
+fn test_risk_manager_frequency_limit() {
+    let limits = RiskLimits {
+        max_trade_usd: 10_000.0,
+        max_trade_pct: 1.0,
+        max_trades_per_hour: 3,
+        ..Default::default()
+    };
+
+    let mut manager = RiskManager::new(limits, 1000.0);
+    let mut signal = create_test_signal("ETH/USDC");
+    signal.size = 0.1;
+
+    for _ in 0..3 {
+        assert!(manager.check_pre_trade(&signal).0);
+        manager.record_trade(1.0);
+    }
+
+    let (allowed, reason) = manager.check_pre_trade(&signal);
+    assert!(!allowed);
+    assert!(reason.contains("Hourly trade limit"));
+}
+
+#[test]
+fn test_risk_manager_reset_daily() {
+    let limits = RiskLimits {
+        max_trade_usd: 10_000.0,
+        max_trade_pct: 1.0,
+        max_trades_per_hour: 2,
+        max_daily_loss: 10.0,
+        ..Default::default()
+    };
+
+    let mut manager = RiskManager::new(limits, 1000.0);
+    let mut signal = create_test_signal("ETH/USDC");
+    signal.size = 0.1;
+
+    manager.record_trade(1.0);
+    manager.record_trade(1.0);
+    assert!(!manager.check_pre_trade(&signal).0);
+
+    manager.reset_daily();
+
+    assert!(manager.check_pre_trade(&signal).0);
+}
+
+#[test]
+fn test_validator_signal_sanity() {
+    let validator = PreTradeValidator::default();
+    let mut signal = create_test_signal("ETH/USDC");
+
+    signal.timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+
+    let (ok, msg) = validator.validate_signal(&signal);
+    assert!(ok, "Valid signal failed: {}", msg);
+
+    let mut bad_price = signal.clone();
+    bad_price.cex_price = 0.0;
+    let (ok, msg) = validator.validate_signal(&bad_price);
+    assert!(!ok);
+    assert!(msg.contains("Invalid CEX price"));
+
+    let mut bad_spread = signal.clone();
+    bad_spread.spread_bps = 600.0;
+    let (ok, msg) = validator.validate_signal(&bad_spread);
+    assert!(!ok);
+    assert!(msg.contains("too high"));
+
+    let mut stale = signal.clone();
+    stale.timestamp -= 10.0;
+    let (ok, msg) = validator.validate_signal(&stale);
+    assert!(!ok);
+    assert!(msg.contains("Signal too old"));
+}
+
+#[test]
+fn test_validator_price_feed_deviation() {
+    let validator = PreTradeValidator::new(5); // Window size 5
+    let pair = "ETH/USDC";
+
+    validator.validate_price_feed(100.0, pair);
+    validator.validate_price_feed(100.0, pair);
+    validator.validate_price_feed(100.0, pair);
+
+    let (ok, _) = validator.validate_price_feed(102.0, pair);
+    assert!(ok);
+
+    let (ok, msg) = validator.validate_price_feed(115.0, pair);
+    assert!(!ok);
+    assert!(msg.contains("deviates"));
+
+    for _ in 0..5 {
+        validator.validate_price_feed(200.0, pair);
+    }
+    let (ok, _) = validator.validate_price_feed(202.0, pair);
+    assert!(ok, "Should pass against new higher average");
+}
+
+#[test]
+fn test_monitoring_seconds_since() {
+    let now = Instant::now();
+    let result = monitoring::seconds_since(Some(now));
+    assert!(result.is_some());
+    assert!(result.unwrap() <= 1);
+
+    let result_none = monitoring::seconds_since(None);
+    assert!(result_none.is_none());
+}
+
+#[test]
+fn test_bot_health_struct() {
+    let health = monitoring::BotHealth {
+        is_running: true,
+        uptime_seconds: 3600,
+        last_trade_age_seconds: Some(10),
+        circuit_breaker_open: false,
+        session_pnl: 125.50,
+        daily_pnl_limit_reached: false,
+    };
+
+    assert_eq!(health.uptime_seconds, 3600);
+    assert_eq!(health.session_pnl, 125.50);
+    health.log();
+}
+
+#[test]
+fn test_monitoring_logs_no_panic() {
+    monitoring::log_trade("BTC/USDT", "BuyCexSellDex", 0.5, 45.0, 12.0, "DONE");
+    monitoring::log_error("test_context", "Something went wrong");
+}
+
+#[tokio::test]
+async fn test_kill_switch_capital_protection() {
+    let telegram = Arc::new(TelegramAlert::new("".to_string()));
+    let limits = RiskLimits::default();
+    let risk_manager = RiskManager::new(limits, 1000.0);
+    let mut kill_switch = AutoKillSwitch::new();
+
+    let killed = kill_switch.check(&risk_manager, 0, &telegram).await;
+    assert!(!killed);
+
+    let mut bad_risk = RiskManager::new(RiskLimits::default(), 1000.0);
+    bad_risk.record_trade(-600.0);
+
+    let killed = kill_switch.check(&bad_risk, 0, &telegram).await;
+    assert!(killed);
+    assert!(kill_switch.triggered);
+    assert!(kill_switch.reason.unwrap().contains("dropped below 50%"));
+}
+
+#[tokio::test]
+async fn test_kill_switch_error_flood() {
+    let telegram = Arc::new(TelegramAlert::new("".to_string()));
+    let limits = RiskLimits::default();
+    let risk_manager = RiskManager::new(limits, 1000.0);
+    let mut kill_switch = AutoKillSwitch::new();
+
+    let killed = kill_switch.check(&risk_manager, 60, &telegram).await;
+    assert!(killed);
+    assert!(kill_switch.triggered);
+    assert!(
+        kill_switch
+            .reason
+            .unwrap()
+            .contains("Critical error frequency")
+    );
+}
+
+#[tokio::test]
+async fn test_telegram_alert_logic() {
+    let alert = TelegramAlert::new("chat_id".to_string());
+
+    alert.send("Unit test message", false).await;
+    alert.send("Urgent unit test", true).await;
+
+    let has_stop = alert.check_for_stop_command().await;
+    assert!(!has_stop);
 }

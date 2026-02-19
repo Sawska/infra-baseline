@@ -28,7 +28,7 @@ impl<'a> TransactionBuilder<'a> {
             nonce: None,
             gas_limit: None,
             priority: "medium".to_string(),
-            chain_id: 1,
+            chain_id: 42161,
             gas_estimate_buffer: 1.2,
             should_estimate_gas: false,
         }

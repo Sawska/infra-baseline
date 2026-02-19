@@ -3,6 +3,7 @@ use crate::signal::{Direction, Signal};
 use alloy_primitives::U256;
 use exchange::client::{ExchangeClient, OrderBook};
 use inventory::tracker::{InventoryTracker, Venue};
+use log::{info, warn};
 use pricing::amm::{Pool, Token};
 use rust_decimal::prelude::*;
 use std::cmp::Ordering;
@@ -130,13 +131,30 @@ impl SignalGenerator {
         let now = SignalGenerator::get_now();
 
         if self.in_cooldown(pair, now) {
+            info!("Skipping {} due to cooldown.", pair);
             return None;
         }
-
-        let prices = self.fetch_prices(pair, size).await?;
+        let prices = match self.fetch_prices(pair, size).await {
+            Some(p) => {
+                info!("{} Prices | CEX: {} | DEX: {}", pair, p.cex_ask, p.dex_buy);
+                p
+            }
+            None => {
+                warn!(
+                    "Failed to fetch prices for {}. (Possible symbol mismatch or API error)",
+                    pair
+                );
+                return None;
+            }
+        };
 
         let spread_a = (prices.dex_sell - prices.cex_ask) / prices.cex_ask * 10_000.0;
         let spread_b = (prices.cex_bid - prices.dex_buy) / prices.dex_buy * 10_000.0;
+
+        info!(
+            "📊{} Spreads | BuyCex->SellDex: {:.2} bps | BuyDex->SellCex: {:.2} bps | Min Required: {:.2}",
+            pair, spread_a, spread_b, self.config.min_spread_bps
+        );
 
         let (direction, spread, execution_cex, execution_dex) =
             if spread_a > spread_b && spread_a >= self.config.min_spread_bps {
@@ -154,6 +172,7 @@ impl SignalGenerator {
                     prices.dex_buy,
                 )
             } else {
+                info!("{} ignored: Spread too low.", pair);
                 return None;
             };
 
@@ -162,7 +181,16 @@ impl SignalGenerator {
         let total_fees = (self.fees.total_fee_bps(trade_value) / 10_000.0) * trade_value;
         let net_pnl = gross_pnl - total_fees;
 
+        info!(
+            "{} Potential PnL: Gross ${:.4} - Fees ${:.4} = Net ${:.4} (Min: ${:.4})",
+            pair, gross_pnl, total_fees, net_pnl, self.config.min_profit_usd
+        );
+
         if net_pnl < self.config.min_profit_usd {
+            warn!(
+                "{} ignored: Not profitable enough (Net ${:.4})",
+                pair, net_pnl
+            );
             return None;
         }
 
@@ -170,6 +198,10 @@ impl SignalGenerator {
             .check_inventory(pair, direction, size, execution_cex)
             .await;
         let within_limits = trade_value <= self.config.max_position_usd;
+
+        if !inventory_ok {
+            warn!("{} inventory check failed (Insufficient funds?)", pair);
+        }
 
         let signal = Signal::new(
             pair.to_string(),
@@ -188,6 +220,7 @@ impl SignalGenerator {
         );
 
         self.last_signal_time.insert(pair.to_string(), now);
+
         Some(signal)
     }
     /// Fetches the latest price data for both CEX and DEX.
@@ -245,6 +278,7 @@ impl SignalGenerator {
             return false;
         }
         let (base, quote) = (assets[0], assets[1]);
+        let required_quote = size * price * 1.01;
 
         match direction {
             Direction::BuyCexSellDex => {
@@ -258,7 +292,18 @@ impl SignalGenerator {
                     .to_f64()
                     .unwrap_or(0.0);
 
-                quote_cex >= size * price * 1.01 && base_dex >= size
+                let has_quote = quote_cex >= required_quote;
+                let has_base = base_dex >= size;
+
+                if !has_quote || !has_base {
+                    warn!(
+                        "[Inventory] Insufficient funds for BuyCexSellDex on {}: \
+                    CEX {} available: {:.2} (need {:.2}), \
+                    DEX {} available: {:.2} (need {:.2})",
+                        pair, quote, quote_cex, required_quote, base, base_dex, size
+                    );
+                }
+                has_quote && has_base
             }
             Direction::BuyDexSellCex => {
                 let inventory = self.inventory.lock().await;
@@ -271,7 +316,18 @@ impl SignalGenerator {
                     .to_f64()
                     .unwrap_or(0.0);
 
-                base_cex >= size && quote_dex >= size * price * 1.01
+                let has_base = base_cex >= size;
+                let has_quote = quote_dex >= required_quote;
+
+                if !has_base || !has_quote {
+                    warn!(
+                        "[Inventory] Insufficient funds for BuyDexSellCex on {}: \
+                    CEX {} available: {:.2} (need {:.2}), \
+                    DEX {} available: {:.2} (need {:.2})",
+                        pair, base, base_cex, size, quote, quote_dex, required_quote
+                    );
+                }
+                has_base && has_quote
             }
         }
     }
@@ -294,5 +350,15 @@ impl SignalGenerator {
         let factor = 10f64.powi(decimals as i32);
         let raw = (val * factor) as u128;
         U256::from(raw)
+    }
+
+    /// Dynamically updates the generator's core configuration (spreads, profit targets, etc.)
+    pub fn update_config(&mut self, config: GeneratorConfig) {
+        self.config = config;
+    }
+
+    /// Dynamically updates the fee structure (used when switching between V3 fee tiers)
+    pub fn set_fees(&mut self, fees: FeeStructure) {
+        self.fees = fees;
     }
 }

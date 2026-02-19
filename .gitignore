@@ -8,3 +8,5 @@ report.json
 .DS_store
 pnl_history.html
 arb_opportunities.csv
+telegram_bot/package-lock.json
+telegram_bot/node_modules

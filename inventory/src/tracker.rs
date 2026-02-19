@@ -113,6 +113,14 @@ impl InventoryTracker {
             .unwrap_or(Decimal::ZERO)
     }
 
+    pub fn get_balance(&self, venue: Venue, asset: &str) -> Decimal {
+        self.balances
+            .get(&venue)
+            .and_then(|v| v.get(asset))
+            .map(|b| b.free)
+            .unwrap_or(Decimal::ZERO)
+    }
+
     /// Pre-flight check before executing an arbitrage trade
     pub fn can_execute(
         &self,

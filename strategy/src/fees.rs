@@ -15,8 +15,8 @@ impl Default for FeeStructure {
     fn default() -> Self {
         Self {
             cex_taker_bps: 10.0,
-            dex_swap_bps: 30.0,
-            gas_cost_usd: 5.0,
+            dex_swap_bps: 1.0,
+            gas_cost_usd: 0.02,
         }
     }
 }

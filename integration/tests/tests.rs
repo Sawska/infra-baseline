@@ -22,6 +22,15 @@ async fn get_test_client() -> ExchangeClient {
         secret: "test_secret".into(),
         is_sandbox: true,
         skip_connection_validation: false,
+        production: false,
+        binance_http_url: "test".into(),
+        binance_ws_url: "test".into(),
+        cex_fee_bps: 0.0,
+        arbitrum_rpc_url: "test".into(),
+        arbitrum_chain_id: 0,
+        pair: "test".into(),
+        weth_address: "test".into(),
+        usdc_address: "test".into(),
     };
 
     let base_url = "https://api.binance.com".to_string();

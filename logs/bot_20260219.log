@@ -1,0 +1,47 @@
+2026-02-19 01:33:06 |INFO  |=== Configuring Bot for PEPE/USDT (Dry Run) ===
+2026-02-19 01:33:06 |INFO  |Metrics server starting on http://localhost:3030/metrics
+2026-02-19 01:33:06 |INFO  |Initializing ArbBot...
+2026-02-19 01:33:06 |WARN  |PRODUCTION MODE ENABLED - REAL MONEY TRADING
+2026-02-19 01:33:06 |INFO  |BINANCE_API_KEY
+2026-02-19 01:33:06 |INFO  |BINANCE_SECRET
+2026-02-19 01:33:10 |INFO  |0x225e56b6B752b5bD5921d841FD8c5691A1300F2E
+2026-02-19 01:33:10 |INFO  |📊 [Sync] Wallet inventory updated successfully.
+2026-02-19 01:33:10 |INFO  |Bot initialized. Heartbeat file: /tmp/arb_bot_heartbeat
+2026-02-19 01:33:10 |INFO  |PnL History file: pnl_history.csv
+2026-02-19 01:33:10 |INFO  |PnL Dashboard: pnl_chart.html
+2026-02-19 01:33:10 |INFO  |DRY RUN MODE ENABLED - No trades will be executed
+2026-02-19 01:33:10 |INFO  |Bot starting...
+2026-02-19 01:33:10 |INFO  |0x225e56b6B752b5bD5921d841FD8c5691A1300F2E
+2026-02-19 01:33:11 |INFO  |📊 [Sync] Wallet inventory updated successfully.
+2026-02-19 01:33:11 |INFO  |PEPE/USDT Prices | CEX: 0.00000422 | DEX: 0.00000420226601304816
+2026-02-19 01:33:11 |INFO  |📊 PEPE/USDT Spreads | BuyCex->SellDex: -42.02 bps | BuyDex->SellCex: 18.40 bps | Min Required: 50.00
+2026-02-19 01:33:11 |INFO  |❌ PEPE/USDT ignored: Spread too low.
+2026-02-19 01:33:13 |INFO  |0x225e56b6B752b5bD5921d841FD8c5691A1300F2E
+2026-02-19 01:33:13 |INFO  |📊 [Sync] Wallet inventory updated successfully.
+2026-02-19 01:33:14 |INFO  |PEPE/USDT Prices | CEX: 0.00000422 | DEX: 0.00000420226601304816
+2026-02-19 01:33:14 |INFO  |📊 PEPE/USDT Spreads | BuyCex->SellDex: -42.02 bps | BuyDex->SellCex: 18.40 bps | Min Required: 50.00
+2026-02-19 01:33:14 |INFO  |❌ PEPE/USDT ignored: Spread too low.
+2026-02-19 01:33:15 |INFO  |0x225e56b6B752b5bD5921d841FD8c5691A1300F2E
+2026-02-19 01:33:16 |INFO  |📊 [Sync] Wallet inventory updated successfully.
+2026-02-19 01:33:16 |INFO  |PEPE/USDT Prices | CEX: 0.00000422 | DEX: 0.00000420226601304816
+2026-02-19 01:33:16 |INFO  |📊 PEPE/USDT Spreads | BuyCex->SellDex: -42.02 bps | BuyDex->SellCex: 18.40 bps | Min Required: 50.00
+2026-02-19 01:33:16 |INFO  |❌ PEPE/USDT ignored: Spread too low.
+2026-02-19 01:33:17 |INFO  |0x225e56b6B752b5bD5921d841FD8c5691A1300F2E
+2026-02-19 01:33:18 |INFO  |📊 [Sync] Wallet inventory updated successfully.
+2026-02-19 01:33:18 |INFO  |PEPE/USDT Prices | CEX: 0.00000422 | DEX: 0.00000420226601304816
+2026-02-19 01:33:18 |INFO  |📊 PEPE/USDT Spreads | BuyCex->SellDex: -42.02 bps | BuyDex->SellCex: 18.40 bps | Min Required: 50.00
+2026-02-19 01:33:18 |INFO  |❌ PEPE/USDT ignored: Spread too low.
+2026-02-19 01:33:19 |INFO  |0x225e56b6B752b5bD5921d841FD8c5691A1300F2E
+2026-02-19 01:33:20 |INFO  |📊 [Sync] Wallet inventory updated successfully.
+2026-02-19 01:33:20 |INFO  |PEPE/USDT Prices | CEX: 0.00000423 | DEX: 0.00000420226601304816
+2026-02-19 01:33:20 |INFO  |📊 PEPE/USDT Spreads | BuyCex->SellDex: -65.56 bps | BuyDex->SellCex: 42.20 bps | Min Required: 50.00
+2026-02-19 01:33:20 |INFO  |❌ PEPE/USDT ignored: Spread too low.
+2026-02-19 01:33:21 |WARN  |KILL SWITCH FILE DETECTED. Shutting down.
+2026-02-19 01:33:21 |WARN  |🚨 EMERGENCY FLATTEN TRIGGERED: Selling all CEX positions!
+2026-02-19 01:33:21 |WARN  |Dry run enabled. Skipping actual sell orders.
+2026-02-19 01:43:55 |INFO  |=== Configuring Bot for PEPE/USDT (Dry Run) ===
+2026-02-19 01:43:55 |INFO  |Metrics server starting on http://localhost:3030/metrics
+2026-02-19 01:43:55 |INFO  |Initializing ArbBot...
+2026-02-19 01:43:55 |WARN  |PRODUCTION MODE ENABLED - REAL MONEY TRADING
+2026-02-19 01:43:55 |INFO  |BINANCE_API_KEY
+2026-02-19 01:43:55 |INFO  |BINANCE_SECRET

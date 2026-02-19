@@ -281,7 +281,7 @@ impl UniswapV2Pair {
             gas_limit: None,
             max_fee_per_gas: None,
             max_priority_fee: None,
-            chain_id: 1,
+            chain_id: 42161,
         }
     }
 
@@ -454,43 +454,34 @@ impl UniswapV3Pool {
     }
 
     pub fn get_spot_price(&self, token_in: &Token) -> Result<Decimal> {
-        let sqrt_price_dec = self.u256_to_decimal(self.sqrt_price_x96);
-        let q96_dec = self.u256_to_decimal(U256::from(1) << 96);
+        let sqrt_price_f64 = self
+            .sqrt_price_x96
+            .to_string()
+            .parse::<f64>()
+            .unwrap_or(0.0);
+        let q96_f64 = 2.0f64.powi(96);
 
-        let p = (sqrt_price_dec / q96_dec).powi(2);
+        let p = (sqrt_price_f64 / q96_f64).powi(2);
 
-        if token_in.address == self.token0.address {
-            let adj =
-                Decimal::from(10).powi(self.token0.decimals as i64 - self.token1.decimals as i64);
-            Ok(p * adj)
-        } else {
-            if p.is_zero() {
-                return Ok(Decimal::ZERO);
-            }
-            let inv_p = Decimal::ONE / p;
-            let adj =
-                Decimal::from(10).powi(self.token1.decimals as i64 - self.token0.decimals as i64);
-            Ok(inv_p * adj)
-        }
-    }
-
-    pub fn get_execution_price(&self, amount_in: U256, token_in: &Token) -> Result<Decimal> {
-        let amount_out = self.get_amount_out(amount_in, token_in)?;
-
-        let a_in_d = self.u256_val_to_decimal(amount_in, token_in.decimals);
-
-        let token_out = if token_in.address == self.token0.address {
-            &self.token1
-        } else {
-            &self.token0
-        };
-        let a_out_d = self.u256_val_to_decimal(amount_out, token_out.decimals);
-
-        if a_in_d.is_zero() {
+        if p == 0.0 {
             return Ok(Decimal::ZERO);
         }
 
-        Ok(a_out_d / a_in_d)
+        let diff = self.token0.decimals as i32 - self.token1.decimals as i32;
+        let adj = 10.0f64.powi(diff);
+
+        let final_price = if token_in.address == self.token0.address {
+            p * adj
+        } else {
+            (1.0 / p) * (1.0 / adj)
+        };
+
+        Decimal::from_f64_retain(final_price)
+            .ok_or_else(|| anyhow::anyhow!("Failed to convert price to Decimal"))
+    }
+
+    pub fn get_execution_price(&self, _amount_in: U256, token_in: &Token) -> Result<Decimal> {
+        self.get_spot_price(token_in)
     }
 
     pub fn get_price_impact(&self, amount_in: U256, token_in: &Token) -> Result<Decimal> {
@@ -502,17 +493,6 @@ impl UniswapV3Pool {
         }
 
         Ok((spot - exec) / spot)
-    }
-
-    fn u256_to_decimal(&self, val: U256) -> Decimal {
-        Decimal::from_str(&val.to_string()).unwrap_or(Decimal::ZERO)
-    }
-
-    fn u256_val_to_decimal(&self, val: U256, decimals: u8) -> Decimal {
-        let s = val.to_string();
-        let d = Decimal::from_str(&s).unwrap_or(Decimal::ZERO);
-        let multiplier = Decimal::from(10u64.pow(decimals as u32));
-        d / multiplier
     }
 
     fn get_next_tick(&self, current_tick: i32, zero_for_one: bool) -> (i32, bool) {

@@ -20,6 +20,21 @@ use strategy::signal::{Direction, Signal};
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep, timeout};
 
+/// Binance rules for ETH/USDC
+const MIN_NOTIONAL: f64 = 5.0;
+const LOT_SIZE_STEP: f64 = 1.0;
+const PRICE_TICK: f64 = 0.00000001;
+
+/// Round quantity down to nearest lot size step
+pub fn round_quantity(qty: f64, step: f64) -> f64 {
+    (qty / step).floor() * step
+}
+
+/// Round price to nearest tick (can round up or down depending on Rust's f64 round)
+pub fn round_price(price: f64, tick: f64) -> f64 {
+    (price / tick).round() * tick
+}
+
 sol! {
     function approve(address spender, uint256 amount) external returns (bool);
     function allowance(address owner, address spender) external view returns (uint256);
@@ -115,13 +130,13 @@ pub struct ExecutorConfig {
 impl Default for ExecutorConfig {
     fn default() -> Self {
         Self {
-            leg1_timeout_sec: 5.0,
+            leg1_timeout_sec: 15.0,
             leg2_timeout_sec: 60.0,
             min_fill_ratio: 0.99,
             use_flashbots: true,
             simulation_mode: true,
             dex_router_v3: None,
-            slippage_tolerance: 0.005,
+            slippage_tolerance: 0.05,
             dex_router_address: None,
             cb_config: None,
         }
@@ -208,8 +223,6 @@ impl Executor {
                 return ctx;
             }
         }
-
-        // Removed simulation short-circuit to allow leg-specific simulation logic
 
         ctx.state = ExecutorState::Validating;
         if !signal.is_valid() {
@@ -456,8 +469,10 @@ impl Executor {
         if !leg2.success {
             ctx.state = ExecutorState::Unwinding;
             self.unwind(&ctx).await;
+            let err_msg = leg2.error.unwrap_or("Unknown CEX error".to_string());
+            warn!("BINANCE ERROR: {}", err_msg);
+            ctx.error = Some(format!("CEX failed: {} - unwound", err_msg));
             ctx.state = ExecutorState::Failed;
-            ctx.error = Some("CEX failed after DEX - unwound".to_string());
             self.metrics.leg_cex_failures.inc();
             return ctx;
         }
@@ -516,10 +531,27 @@ impl Executor {
         } else {
             "sell"
         };
-        let price_multiplier = if side == "buy" { 1.002 } else { 0.998 };
-        let limit_price =
-            Decimal::from_f64(signal.cex_price * price_multiplier).unwrap_or(Decimal::ZERO);
-        let amount = TokenAmount::from_human(&actual_size.to_string(), 8, None).unwrap();
+        let price_multiplier = if side == "buy" { 1.01 } else { 0.99 };
+
+        let mut qty = actual_size;
+        let mut price = signal.cex_price * price_multiplier;
+
+        qty = round_quantity(qty, LOT_SIZE_STEP);
+        price = round_price(price, PRICE_TICK);
+
+        if qty * price < MIN_NOTIONAL {
+            return LegResult {
+                success: false,
+                price,
+                filled: 0.0,
+                order_id: None,
+                tx_hash: None,
+                error: Some("Order below MIN_NOTIONAL".to_string()),
+            };
+        }
+
+        let limit_price = Decimal::from_f64(price).unwrap_or(Decimal::ZERO);
+        let amount = TokenAmount::from_human(&qty.to_string(), 8, None).unwrap();
 
         match self
             .exchange
@@ -704,7 +736,15 @@ impl Executor {
         } else {
             18
         };
-        let amount_in_u256 = U256::from((size * 10f64.powi(decimals as i32)).round() as u128);
+        let (amount_in_u256, expected_fill_size) = if signal.direction == Direction::BuyDexSellCex {
+            let usdt_cost = size * signal.dex_price;
+            let input_val = U256::from((usdt_cost * 10f64.powi(decimals as i32)).round() as u128);
+
+            (input_val, size)
+        } else {
+            let input_val = U256::from((size * 10f64.powi(decimals as i32)).round() as u128);
+            (input_val, size)
+        };
 
         let amount_out_min = if let Some(p) = pool {
             let (t0, t1) = p.tokens();
@@ -712,17 +752,31 @@ impl Executor {
 
             match p.get_amount_out(amount_in_u256, token_in_ref) {
                 Ok(expected) => {
-                    let bps = (self.config.slippage_tolerance * 10000.0) as u64;
-                    let factor = U256::from(10000_u64.saturating_sub(bps));
-                    expected.checked_mul(factor).unwrap_or(U256::ZERO) / U256::from(10000)
+                    let mut tolerance_bps = (self.config.slippage_tolerance * 10000.0) as u64;
+
+                    if matches!(p, Pool::V3(_)) {
+                        tolerance_bps += 50;
+                    }
+
+                    let factor = U256::from(10000_u64.saturating_sub(tolerance_bps));
+
+                    expected
+                        .checked_mul(factor)
+                        .unwrap_or(U256::ZERO)
+                        .checked_div(U256::from(10000))
+                        .unwrap_or(U256::ZERO)
                 }
                 Err(e) => {
-                    warn!("Failed to calculate output for slippage: {}", e);
-                    U256::ZERO
+                    warn!(
+                        "Failed to calculate output for slippage: {}. Using unsafe fallback.",
+                        e
+                    );
+                    U256::from(1)
                 }
             }
         } else {
-            U256::ZERO
+            warn!("Pool not found for calc. Using unsafe slippage.");
+            U256::from(1)
         };
 
         if let Err(e) = self
@@ -779,7 +833,6 @@ impl Executor {
             .abi_encode()
         };
 
-        // --- CHANGED: Use gas_limit instead of estimate to bypass "from: None" RPC error
         let builder = TransactionBuilder::new(client, wallet)
             .to(router_addr)
             .data(calldata)
@@ -792,7 +845,7 @@ impl Executor {
                     LegResult {
                         success: true,
                         price: signal.dex_price,
-                        filled: size,
+                        filled: expected_fill_size,
                         order_id: None,
                         tx_hash: Some(receipt.tx_hash),
                         error: None,
@@ -844,7 +897,7 @@ impl Executor {
                 symbol: None,
             },
             data: Bytes::from(call.abi_encode()),
-            chain_id: 1,
+            chain_id: 4216,
             nonce: None,
             gas_limit: None,
             max_fee_per_gas: None,
@@ -860,7 +913,6 @@ impl Executor {
 
         if current_allowance < amount {
             if current_allowance > U256::ZERO {
-                info!("Resetting USDT allowance for {:?}", token);
                 let reset_data = approveCall {
                     spender: spender_alloy,
                     amount: U256::ZERO,
@@ -875,14 +927,12 @@ impl Executor {
                     .await;
             }
 
-            info!("Setting infinite approval for {:?}", token);
             let approve_data = approveCall {
                 spender: spender_alloy,
                 amount: U256::MAX,
             }
             .abi_encode();
 
-            // --- CHANGED: Use gas_limit here as well
             let receipt = TransactionBuilder::new(client, wallet)
                 .to(token)
                 .data(approve_data)

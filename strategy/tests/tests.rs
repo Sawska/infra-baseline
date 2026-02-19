@@ -21,6 +21,15 @@ async fn setup_mock_generator() -> SignalGenerator {
         secret: "test".to_string(),
         is_sandbox: true,
         skip_connection_validation: true,
+        production: false,
+        binance_http_url: "test".into(),
+        binance_ws_url: "test".into(),
+        cex_fee_bps: 0.0,
+        arbitrum_rpc_url: "test".into(),
+        arbitrum_chain_id: 0,
+        pair: "test".into(),
+        weth_address: "test".into(),
+        usdc_address: "test".into(),
     };
 
     let client = ExchangeClient::new(config, ExchangeType::Binance)

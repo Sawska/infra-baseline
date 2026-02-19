@@ -16,7 +16,10 @@ pricing = { path = "../pricing" }
 exchange = {path = "../exchange"}
 inventory = {path = "../inventory"}
 strategy = {path = "../strategy"}
+anyhow.workspace = true
+chrono.workspace = true
 log = "0.4.29"
 prometheus = "0.14.0"
 alloy-sol-types.workspace = true
 alloy-primitives = { version = "1.5.4", features = ["serde"] }
+fern = "0.7.1"
