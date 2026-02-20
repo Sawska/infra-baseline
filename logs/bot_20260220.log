@@ -15462,3 +15462,421 @@
 2026-02-20 15:39:54 |ERROR |ERROR | ctx=execution_failure | msg=DEX failed: Some("Tx Failed: RpcError(\"server returned an error response: error code -32000: insufficient funds for gas * price + value: address 0x225e56b6B752b5bD5921d841FD8c5691A1300F2E have 1704132125361973 want 2512087600000000\")")
 2026-02-20 15:39:56 |INFO  |Circuit breaker open - skipping tick
 2026-02-20 15:39:57 |WARN  |KILL SWITCH FILE DETECTED. Pausing Trading.
+2026-02-20 16:14:26 |INFO  |=== Configuring Bot for Multiple Pairs (PEPE & ETH) ===
+2026-02-20 16:14:26 |INFO  |Metrics server starting on http://localhost:3030/metrics
+2026-02-20 16:14:26 |INFO  |Initializing ArbBot...
+2026-02-20 16:14:32 |ERROR |Failed to send bot state to bridge: error sending request for url (http://localhost:3000/updateState): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:14:32 |INFO  |Bot initialized. Heartbeat file: /tmp/arb_bot_heartbeat
+2026-02-20 16:14:32 |INFO  |PnL History file: pnl_history.csv
+2026-02-20 16:14:32 |INFO  |PnL Dashboard: pnl_chart.html
+2026-02-20 16:14:32 |INFO  |Bot starting...
+2026-02-20 16:14:32 |ERROR |Failed to send Telegram alert: error sending request for url (http://localhost:3000/sendMessage): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:14:33 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004200588449491261
+2026-02-20 16:14:33 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 195.60 bps | BuyDex->SellCex: -215.66 bps | Min Required: 130.00
+2026-02-20 16:14:33 |INFO  |PEPE/USDT Potential PnL: Gross $0.1007 - Fees $0.0257 = Net $0.0751 (Min: $0.0100)
+2026-02-20 16:14:33 |INFO  |WETH/USDT Prices | CEX: 1936.02 | DEX: 1935.914354968086
+2026-02-20 16:14:33 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: -0.55 bps | BuyDex->SellCex: 0.49 bps | Min Required: 20.00
+2026-02-20 16:14:33 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:14:33 |INFO  |   Candidate: PEPE/USDT | Spread: 195.60 bps | Exp PnL: $0.08 | Score: 82.00
+2026-02-20 16:14:33 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.15 | Max Allowed=$10.00
+2026-02-20 16:14:33 |INFO  |Executing Signal: PEPE/USDT | Spread: 195.6 bps | Est PnL: $0.08
+2026-02-20 16:14:35 |ERROR |Failed to send Telegram alert: error sending request for url (http://localhost:3000/sendMessage): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:14:35 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=195.6bps | pnl=$0.04 | state=Done
+2026-02-20 16:14:37 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004200588449491261
+2026-02-20 16:14:37 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 195.60 bps | BuyDex->SellCex: -215.66 bps | Min Required: 130.00
+2026-02-20 16:14:37 |INFO  |PEPE/USDT Potential PnL: Gross $0.1007 - Fees $0.0257 = Net $0.0751 (Min: $0.0100)
+2026-02-20 16:14:37 |INFO  |WETH/USDT Prices | CEX: 1936.19 | DEX: 1935.914354968086
+2026-02-20 16:14:37 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: -1.42 bps | BuyDex->SellCex: 1.37 bps | Min Required: 20.00
+2026-02-20 16:14:37 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:14:37 |INFO  |   Candidate: PEPE/USDT | Spread: 195.60 bps | Exp PnL: $0.08 | Score: 82.00
+2026-02-20 16:14:37 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.15 | Max Allowed=$10.00
+2026-02-20 16:14:37 |INFO  |Executing Signal: PEPE/USDT | Spread: 195.6 bps | Est PnL: $0.08
+2026-02-20 16:14:40 |ERROR |Failed to send Telegram alert: error sending request for url (http://localhost:3000/sendMessage): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:14:40 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=195.6bps | pnl=$0.04 | state=Done
+2026-02-20 16:14:43 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004200588449491261
+2026-02-20 16:14:43 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 195.60 bps | BuyDex->SellCex: -215.66 bps | Min Required: 130.00
+2026-02-20 16:14:43 |INFO  |PEPE/USDT Potential PnL: Gross $0.1007 - Fees $0.0257 = Net $0.0751 (Min: $0.0100)
+2026-02-20 16:14:43 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.20), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:14:43 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:14:43 |INFO  |WETH/USDT Prices | CEX: 1935.95 | DEX: 1935.914354968086
+2026-02-20 16:14:43 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: -0.18 bps | BuyDex->SellCex: 0.13 bps | Min Required: 20.00
+2026-02-20 16:14:43 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:14:43 |INFO  |   Candidate: PEPE/USDT | Spread: 195.60 bps | Exp PnL: $0.08 | Score: 70.00
+2026-02-20 16:14:43 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.15 | Max Allowed=$10.00
+2026-02-20 16:14:43 |INFO  |Executing Signal: PEPE/USDT | Spread: 195.6 bps | Est PnL: $0.08
+2026-02-20 16:14:43 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=195.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:14:43 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:14:44 |ERROR |Failed to poll Telegram updates: error sending request for url (http://localhost:3000/getUpdates?limit=5&offset=-1): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:14:46 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004200588449491261
+2026-02-20 16:14:46 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 195.60 bps | BuyDex->SellCex: -215.66 bps | Min Required: 130.00
+2026-02-20 16:14:46 |INFO  |PEPE/USDT Potential PnL: Gross $0.1007 - Fees $0.0257 = Net $0.0751 (Min: $0.0100)
+2026-02-20 16:14:46 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.20), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:14:46 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:14:46 |INFO  |WETH/USDT Prices | CEX: 1935.95 | DEX: 1935.914354968086
+2026-02-20 16:14:46 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: -0.18 bps | BuyDex->SellCex: 0.13 bps | Min Required: 20.00
+2026-02-20 16:14:46 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:14:46 |INFO  |   Candidate: PEPE/USDT | Spread: 195.60 bps | Exp PnL: $0.08 | Score: 73.30
+2026-02-20 16:14:46 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.15 | Max Allowed=$10.00
+2026-02-20 16:14:46 |INFO  |Executing Signal: PEPE/USDT | Spread: 195.6 bps | Est PnL: $0.08
+2026-02-20 16:14:46 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=195.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:14:46 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:14:48 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004200588449491261
+2026-02-20 16:14:48 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 195.60 bps | BuyDex->SellCex: -215.66 bps | Min Required: 130.00
+2026-02-20 16:14:48 |INFO  |PEPE/USDT Potential PnL: Gross $0.1007 - Fees $0.0257 = Net $0.0751 (Min: $0.0100)
+2026-02-20 16:14:48 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.20), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:14:48 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:14:48 |INFO  |WETH/USDT Prices | CEX: 1935.78 | DEX: 1935.914354968086
+2026-02-20 16:14:48 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: 0.69 bps | BuyDex->SellCex: -0.75 bps | Min Required: 20.00
+2026-02-20 16:14:48 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:14:48 |INFO  |   Candidate: PEPE/USDT | Spread: 195.60 bps | Exp PnL: $0.08 | Score: 70.00
+2026-02-20 16:14:48 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.15 | Max Allowed=$10.00
+2026-02-20 16:14:48 |INFO  |Executing Signal: PEPE/USDT | Spread: 195.6 bps | Est PnL: $0.08
+2026-02-20 16:14:48 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=195.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:14:48 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:14:51 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004200588449491261
+2026-02-20 16:14:51 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 195.60 bps | BuyDex->SellCex: -215.66 bps | Min Required: 130.00
+2026-02-20 16:14:51 |INFO  |PEPE/USDT Potential PnL: Gross $0.1007 - Fees $0.0257 = Net $0.0751 (Min: $0.0100)
+2026-02-20 16:14:51 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.20), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:14:51 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:14:51 |INFO  |WETH/USDT Prices | CEX: 1935.78 | DEX: 1935.914354968086
+2026-02-20 16:14:51 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: 0.69 bps | BuyDex->SellCex: -0.75 bps | Min Required: 20.00
+2026-02-20 16:14:51 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:14:51 |INFO  |   Candidate: PEPE/USDT | Spread: 195.60 bps | Exp PnL: $0.08 | Score: 68.00
+2026-02-20 16:14:51 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.15 | Max Allowed=$10.00
+2026-02-20 16:14:51 |INFO  |Executing Signal: PEPE/USDT | Spread: 195.6 bps | Est PnL: $0.08
+2026-02-20 16:14:51 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=195.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:14:51 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:14:54 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004200588449491261
+2026-02-20 16:14:54 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 195.60 bps | BuyDex->SellCex: -215.66 bps | Min Required: 130.00
+2026-02-20 16:14:54 |INFO  |PEPE/USDT Potential PnL: Gross $0.1007 - Fees $0.0257 = Net $0.0751 (Min: $0.0100)
+2026-02-20 16:14:54 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.20), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:14:54 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:14:54 |INFO  |WETH/USDT Prices | CEX: 1935.78 | DEX: 1935.914354968086
+2026-02-20 16:14:54 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: 0.69 bps | BuyDex->SellCex: -0.75 bps | Min Required: 20.00
+2026-02-20 16:14:54 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:14:54 |INFO  |   Candidate: PEPE/USDT | Spread: 195.60 bps | Exp PnL: $0.08 | Score: 66.70
+2026-02-20 16:14:54 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.15 | Max Allowed=$10.00
+2026-02-20 16:14:54 |INFO  |Executing Signal: PEPE/USDT | Spread: 195.6 bps | Est PnL: $0.08
+2026-02-20 16:14:54 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=195.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:14:54 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:14:55 |ERROR |Failed to poll Telegram updates: error sending request for url (http://localhost:3000/getUpdates?limit=5&offset=-1): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:14:56 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004200588449491261
+2026-02-20 16:14:56 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 195.60 bps | BuyDex->SellCex: -215.66 bps | Min Required: 130.00
+2026-02-20 16:14:56 |INFO  |PEPE/USDT Potential PnL: Gross $0.1007 - Fees $0.0257 = Net $0.0751 (Min: $0.0100)
+2026-02-20 16:14:56 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.20), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:14:56 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:14:57 |INFO  |WETH/USDT Prices | CEX: 1935.92 | DEX: 1935.914354968086
+2026-02-20 16:14:57 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: -0.03 bps | BuyDex->SellCex: -0.02 bps | Min Required: 20.00
+2026-02-20 16:14:57 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:14:57 |INFO  |   Candidate: PEPE/USDT | Spread: 195.60 bps | Exp PnL: $0.08 | Score: 65.70
+2026-02-20 16:14:57 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.15 | Max Allowed=$10.00
+2026-02-20 16:14:57 |INFO  |Executing Signal: PEPE/USDT | Spread: 195.6 bps | Est PnL: $0.08
+2026-02-20 16:14:57 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=195.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:14:57 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:14:59 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004200588449491261
+2026-02-20 16:14:59 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 195.60 bps | BuyDex->SellCex: -215.66 bps | Min Required: 130.00
+2026-02-20 16:14:59 |INFO  |PEPE/USDT Potential PnL: Gross $0.1007 - Fees $0.0257 = Net $0.0751 (Min: $0.0100)
+2026-02-20 16:14:59 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.20), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:14:59 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:14:59 |INFO  |WETH/USDT Prices | CEX: 1935.92 | DEX: 1935.914354968086
+2026-02-20 16:14:59 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: -0.03 bps | BuyDex->SellCex: -0.02 bps | Min Required: 20.00
+2026-02-20 16:14:59 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:14:59 |INFO  |   Candidate: PEPE/USDT | Spread: 195.60 bps | Exp PnL: $0.08 | Score: 65.00
+2026-02-20 16:14:59 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.15 | Max Allowed=$10.00
+2026-02-20 16:14:59 |INFO  |Executing Signal: PEPE/USDT | Spread: 195.6 bps | Est PnL: $0.08
+2026-02-20 16:14:59 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=195.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:14:59 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:15:01 |INFO  |PEPE/USDT Prices | CEX: 0.00000413 | DEX: 0.000004200588449491261
+2026-02-20 16:15:01 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 170.92 bps | BuyDex->SellCex: -191.85 bps | Min Required: 130.00
+2026-02-20 16:15:01 |INFO  |PEPE/USDT Potential PnL: Gross $0.0882 - Fees $0.0257 = Net $0.0626 (Min: $0.0100)
+2026-02-20 16:15:01 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.21), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:15:01 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:15:01 |INFO  |WETH/USDT Prices | CEX: 1936.55 | DEX: 1935.914354968086
+2026-02-20 16:15:01 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: -3.28 bps | BuyDex->SellCex: 3.23 bps | Min Required: 20.00
+2026-02-20 16:15:01 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:15:01 |INFO  |   Candidate: PEPE/USDT | Spread: 170.92 bps | Exp PnL: $0.06 | Score: 64.40
+2026-02-20 16:15:01 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.16 | Max Allowed=$10.00
+2026-02-20 16:15:01 |INFO  |Executing Signal: PEPE/USDT | Spread: 170.9 bps | Est PnL: $0.06
+2026-02-20 16:15:01 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=170.9bps | pnl=$0.00 | state=Failed
+2026-02-20 16:15:01 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:15:04 |INFO  |PEPE/USDT Prices | CEX: 0.00000413 | DEX: 0.000004200588449491261
+2026-02-20 16:15:04 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 170.92 bps | BuyDex->SellCex: -191.85 bps | Min Required: 130.00
+2026-02-20 16:15:04 |INFO  |PEPE/USDT Potential PnL: Gross $0.0882 - Fees $0.0257 = Net $0.0626 (Min: $0.0100)
+2026-02-20 16:15:04 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.21), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:15:04 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:15:04 |INFO  |WETH/USDT Prices | CEX: 1937.1 | DEX: 1935.914354968086
+2026-02-20 16:15:04 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: -6.12 bps | BuyDex->SellCex: 6.07 bps | Min Required: 20.00
+2026-02-20 16:15:04 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:15:04 |INFO  |   Candidate: PEPE/USDT | Spread: 170.92 bps | Exp PnL: $0.06 | Score: 64.00
+2026-02-20 16:15:04 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.16 | Max Allowed=$10.00
+2026-02-20 16:15:04 |INFO  |Executing Signal: PEPE/USDT | Spread: 170.9 bps | Est PnL: $0.06
+2026-02-20 16:15:04 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=170.9bps | pnl=$0.00 | state=Failed
+2026-02-20 16:15:04 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:15:06 |INFO  |PEPE/USDT Prices | CEX: 0.00000413 | DEX: 0.000004200588449491261
+2026-02-20 16:15:06 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: 170.92 bps | BuyDex->SellCex: -191.85 bps | Min Required: 130.00
+2026-02-20 16:15:06 |INFO  |PEPE/USDT Potential PnL: Gross $0.0882 - Fees $0.0257 = Net $0.0626 (Min: $0.0100)
+2026-02-20 16:15:06 |WARN  |[Inventory] Insufficient funds for BuyCexSellDex on PEPE/USDT: CEX USDT available: 14.88 (need 5.21), DEX PEPE available: 652239.14 (need 1250000.00)
+2026-02-20 16:15:06 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:15:06 |INFO  |WETH/USDT Prices | CEX: 1937.15 | DEX: 1935.914354968086
+2026-02-20 16:15:06 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: -6.38 bps | BuyDex->SellCex: 6.33 bps | Min Required: 20.00
+2026-02-20 16:15:06 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:15:06 |INFO  |   Candidate: PEPE/USDT | Spread: 170.92 bps | Exp PnL: $0.06 | Score: 63.60
+2026-02-20 16:15:06 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.16 | Max Allowed=$10.00
+2026-02-20 16:15:06 |INFO  |Executing Signal: PEPE/USDT | Spread: 170.9 bps | Est PnL: $0.06
+2026-02-20 16:15:06 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyCexSellDex | size=1250000.0000 | spread=170.9bps | pnl=$0.00 | state=Failed
+2026-02-20 16:15:06 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:15:07 |WARN  |KILL SWITCH FILE DETECTED. Pausing Trading.
+2026-02-20 16:15:07 |ERROR |Failed to send Telegram alert: error sending request for url (http://localhost:3000/sendMessage): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:15:07 |WARN  |EMERGENCY FLATTEN TRIGGERED: Selling all CEX positions!
+2026-02-20 16:15:07 |ERROR |Failed to send Telegram alert: error sending request for url (http://localhost:3000/sendMessage): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:15:08 |INFO  |Flattening PEPE (Original: 3924642.72, Floor: 3924642)
+2026-02-20 16:15:08 |INFO  |Placing emergency MARKET sell for PEPE/USDT
+2026-02-20 16:15:08 |INFO  |Flattened PEPE: Order ID
+2026-02-20 16:15:31 |ERROR |Failed to poll Telegram updates: error sending request for url (http://localhost:3000/getUpdates?limit=5&offset=-1): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:15:35 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:15:35 |ERROR |Failed to send bot state to bridge: error sending request for url (http://localhost:3000/updateState): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:15:35 |INFO  |HEALTH | uptime=64s | last_trade=Some(54)s | cb_open=false | pnl=$0.08 | limit_reached=false
+2026-02-20 16:15:43 |ERROR |Failed to poll Telegram updates: error sending request for url (http://localhost:3000/getUpdates?limit=5&offset=-1): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:15:55 |ERROR |Failed to poll Telegram updates: error sending request for url (http://localhost:3000/getUpdates?limit=5&offset=-1): error trying to connect: tcp connect error: Connection refused (os error 61)
+2026-02-20 16:16:08 |INFO  |=== Configuring Bot for Multiple Pairs (PEPE & ETH) ===
+2026-02-20 16:16:08 |INFO  |Metrics server starting on http://localhost:3030/metrics
+2026-02-20 16:16:08 |INFO  |Initializing ArbBot...
+2026-02-20 16:16:15 |INFO  |Bot initialized. Heartbeat file: /tmp/arb_bot_heartbeat
+2026-02-20 16:16:15 |INFO  |PnL History file: pnl_history.csv
+2026-02-20 16:16:15 |INFO  |PnL Dashboard: pnl_chart.html
+2026-02-20 16:16:15 |INFO  |Bot starting...
+2026-02-20 16:16:16 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004052615456774219
+2026-02-20 16:16:16 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: -163.55 bps | BuyDex->SellCex: 141.60 bps | Min Required: 130.00
+2026-02-20 16:16:16 |INFO  |PEPE/USDT Potential PnL: Gross $0.0727 - Fees $0.0257 = Net $0.0471 (Min: $0.0100)
+2026-02-20 16:16:16 |WARN  |[Inventory] Insufficient funds for BuyDexSellCex on PEPE/USDT: CEX PEPE available: 0.7200 (need 1250000.0000), DEX USDT available: 25.37 (need 5.19)
+2026-02-20 16:16:16 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:16:16 |INFO  |WETH/USDT Prices | CEX: 1935.44 | DEX: 1935.5850218525675
+2026-02-20 16:16:16 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: 0.75 bps | BuyDex->SellCex: -0.80 bps | Min Required: 20.00
+2026-02-20 16:16:16 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:16:16 |INFO  |   Candidate: PEPE/USDT | Spread: 141.60 bps | Exp PnL: $0.05 | Score: 70.00
+2026-02-20 16:16:16 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.14 | Max Allowed=$10.00
+2026-02-20 16:16:16 |INFO  |Executing Signal: PEPE/USDT | Spread: 141.6 bps | Est PnL: $0.05
+2026-02-20 16:16:16 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyDexSellCex | size=1250000.0000 | spread=141.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:16:16 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:16:18 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004052615456774219
+2026-02-20 16:16:18 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: -163.55 bps | BuyDex->SellCex: 141.60 bps | Min Required: 130.00
+2026-02-20 16:16:18 |INFO  |PEPE/USDT Potential PnL: Gross $0.0727 - Fees $0.0257 = Net $0.0471 (Min: $0.0100)
+2026-02-20 16:16:18 |WARN  |[Inventory] Insufficient funds for BuyDexSellCex on PEPE/USDT: CEX PEPE available: 0.7200 (need 1250000.0000), DEX USDT available: 25.37 (need 5.19)
+2026-02-20 16:16:18 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:16:19 |INFO  |WETH/USDT Prices | CEX: 1935.14 | DEX: 1935.5850218525675
+2026-02-20 16:16:19 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: 2.30 bps | BuyDex->SellCex: -2.35 bps | Min Required: 20.00
+2026-02-20 16:16:19 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:16:19 |INFO  |   Candidate: PEPE/USDT | Spread: 141.60 bps | Exp PnL: $0.05 | Score: 70.00
+2026-02-20 16:16:19 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.14 | Max Allowed=$10.00
+2026-02-20 16:16:19 |INFO  |Executing Signal: PEPE/USDT | Spread: 141.6 bps | Est PnL: $0.05
+2026-02-20 16:16:19 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyDexSellCex | size=1250000.0000 | spread=141.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:16:19 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:16:21 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004052615456774219
+2026-02-20 16:16:21 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: -163.55 bps | BuyDex->SellCex: 141.60 bps | Min Required: 130.00
+2026-02-20 16:16:21 |INFO  |PEPE/USDT Potential PnL: Gross $0.0727 - Fees $0.0257 = Net $0.0471 (Min: $0.0100)
+2026-02-20 16:16:21 |WARN  |[Inventory] Insufficient funds for BuyDexSellCex on PEPE/USDT: CEX PEPE available: 0.7200 (need 1250000.0000), DEX USDT available: 25.37 (need 5.19)
+2026-02-20 16:16:21 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:16:21 |INFO  |WETH/USDT Prices | CEX: 1935.14 | DEX: 1935.5850218525675
+2026-02-20 16:16:21 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: 2.30 bps | BuyDex->SellCex: -2.35 bps | Min Required: 20.00
+2026-02-20 16:16:21 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:16:21 |INFO  |   Candidate: PEPE/USDT | Spread: 141.60 bps | Exp PnL: $0.05 | Score: 70.00
+2026-02-20 16:16:21 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.14 | Max Allowed=$10.00
+2026-02-20 16:16:21 |INFO  |Executing Signal: PEPE/USDT | Spread: 141.6 bps | Est PnL: $0.05
+2026-02-20 16:16:21 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyDexSellCex | size=1250000.0000 | spread=141.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:16:21 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:16:23 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004052615456774219
+2026-02-20 16:16:23 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: -163.55 bps | BuyDex->SellCex: 141.60 bps | Min Required: 130.00
+2026-02-20 16:16:23 |INFO  |PEPE/USDT Potential PnL: Gross $0.0727 - Fees $0.0257 = Net $0.0471 (Min: $0.0100)
+2026-02-20 16:16:23 |WARN  |[Inventory] Insufficient funds for BuyDexSellCex on PEPE/USDT: CEX PEPE available: 0.7200 (need 1250000.0000), DEX USDT available: 25.37 (need 5.19)
+2026-02-20 16:16:23 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:16:23 |INFO  |WETH/USDT Prices | CEX: 1935.14 | DEX: 1935.5850218525675
+2026-02-20 16:16:23 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: 2.30 bps | BuyDex->SellCex: -2.35 bps | Min Required: 20.00
+2026-02-20 16:16:23 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:16:23 |INFO  |   Candidate: PEPE/USDT | Spread: 141.60 bps | Exp PnL: $0.05 | Score: 60.00
+2026-02-20 16:16:23 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.14 | Max Allowed=$10.00
+2026-02-20 16:16:23 |INFO  |Executing Signal: PEPE/USDT | Spread: 141.6 bps | Est PnL: $0.05
+2026-02-20 16:16:23 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyDexSellCex | size=1250000.0000 | spread=141.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:16:23 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:16:25 |INFO  |PEPE/USDT Prices | CEX: 0.00000412 | DEX: 0.000004052615456774219
+2026-02-20 16:16:25 |INFO  |PEPE/USDT Spreads | BuyCex->SellDex: -163.55 bps | BuyDex->SellCex: 141.60 bps | Min Required: 130.00
+2026-02-20 16:16:25 |INFO  |PEPE/USDT Potential PnL: Gross $0.0727 - Fees $0.0257 = Net $0.0471 (Min: $0.0100)
+2026-02-20 16:16:25 |WARN  |[Inventory] Insufficient funds for BuyDexSellCex on PEPE/USDT: CEX PEPE available: 0.7200 (need 1250000.0000), DEX USDT available: 25.37 (need 5.19)
+2026-02-20 16:16:25 |WARN  |PEPE/USDT inventory check failed (Insufficient funds?)
+2026-02-20 16:16:26 |INFO  |WETH/USDT Prices | CEX: 1935.14 | DEX: 1935.5850218525675
+2026-02-20 16:16:26 |INFO  |WETH/USDT Spreads | BuyCex->SellDex: 2.30 bps | BuyDex->SellCex: -2.35 bps | Min Required: 20.00
+2026-02-20 16:16:26 |INFO  |WETH/USDT ignored: Spread too low.
+2026-02-20 16:16:26 |INFO  |   Candidate: PEPE/USDT | Spread: 141.60 bps | Exp PnL: $0.05 | Score: 60.00
+2026-02-20 16:16:26 |INFO  |Checking Risk: Size=1250000.0000  | Value=$5.14 | Max Allowed=$10.00
+2026-02-20 16:16:26 |INFO  |Executing Signal: PEPE/USDT | Spread: 141.6 bps | Est PnL: $0.05
+2026-02-20 16:16:26 |INFO  |TRADE | pair=PEPE/USDT | dir=BuyDexSellCex | size=1250000.0000 | spread=141.6bps | pnl=$0.00 | state=Failed
+2026-02-20 16:16:26 |ERROR |ERROR | ctx=execution_failure | msg=Signal invalid
+2026-02-20 16:16:27 |WARN  |Remote Stop Command Received via Telegram. Pausing Trading.
+2026-02-20 16:16:27 |WARN  |EMERGENCY FLATTEN TRIGGERED: Selling all CEX positions!
+2026-02-20 16:16:27 |INFO  |Dust balance detected for PEPE (0.72), skipping flatten.
+2026-02-20 16:17:18 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:17:18 |INFO  |HEALTH | uptime=64s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:18:21 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:18:22 |INFO  |HEALTH | uptime=128s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:19:26 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:19:26 |INFO  |HEALTH | uptime=192s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:20:29 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:20:30 |INFO  |HEALTH | uptime=255s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:21:32 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:21:32 |INFO  |HEALTH | uptime=318s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:22:34 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:22:35 |INFO  |HEALTH | uptime=380s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:23:37 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:23:38 |INFO  |HEALTH | uptime=443s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:24:39 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:24:40 |INFO  |HEALTH | uptime=505s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:25:42 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:25:42 |INFO  |HEALTH | uptime=568s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:26:44 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:26:45 |INFO  |HEALTH | uptime=630s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:27:10 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597620385&signature=d5fc19a1c9bebb1b9e9dd872da49a02e683bc9e7f5fade16a58081c1f6b13fd4)
+2026-02-20 16:27:42 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:27:45 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:27:45 |ERROR |Integrity check failed: Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597665526&signature=a8995775bb7255e5af91b99052c0c0c4cd8cc24b9dd4bb769debe3b64bcf433f). Pausing trading for safety.
+2026-02-20 16:27:45 |INFO  |HEALTH | uptime=691s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:27:45 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597665533&signature=1286bc69f9c66734f0e491d6076e0a13f80abbe8eba6c4913ded5418664aaea3)
+2026-02-20 16:27:45 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:27:48 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597668539&signature=7611774ed34d2a9691528f0b0cd8a28ed5ec057aca1d3abdeb94a18a97d8f38e)
+2026-02-20 16:27:48 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:27:51 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597671546&signature=95e48354dca838683e45f39b46f5ce18a2936c3830c29356fad9acb474de017f)
+2026-02-20 16:27:51 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:27:54 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597674561&signature=06519f9db037c6e8c8a5216d6ce6eecbe426629cc77806495ebcbc899a1c9377)
+2026-02-20 16:27:54 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:27:57 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597677574&signature=42d5b92c3db272eb2b09ee884cbcc4bc47412e16ed9da3e005c57a6c7ea277ab)
+2026-02-20 16:27:57 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:00 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597680583&signature=d0fb900e2d79fe42cc8874fcaadc445ff35a43f36b0f2940820ee2fd0f79aa0d)
+2026-02-20 16:28:00 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:03 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597683592&signature=fe80f6ce69719b1eb63d2e466d587807442b065e4ecfeeb8e46821825d809ea1)
+2026-02-20 16:28:03 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:06 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597686601&signature=74873e8dffb8dfca672745780a0f17f9628858e1c7aeae1d05ba1730bf3e12ab)
+2026-02-20 16:28:06 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:09 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597689614&signature=82c8af0e18e8f8ccd335ee637098f07b6db94ff9d92ffc7d66b69ab011f7a956)
+2026-02-20 16:28:09 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:12 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597692622&signature=f0eb359610395f07a68d4e801a5bd27a22dbac96c4ec3aa4726f96642bab05f5)
+2026-02-20 16:28:12 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:15 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597695632&signature=3d85f2aa4ccddf4f266f0e440be9c2326bcf1e20e2e7b6e2de521bbebc66564b)
+2026-02-20 16:28:15 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:18 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597698642&signature=fcc7368e633c776c36315cc2474c6ba75aa55d3d10e58905314aca2e0b76b601)
+2026-02-20 16:28:18 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:21 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597701656&signature=05e7eaeac5f5f3f59ea54ba865150450730769fdf9cc640150310a1206f214f0)
+2026-02-20 16:28:21 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:24 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597704664&signature=fcca87c0a7f8eb9289baa31643a1a927a767c6ecc6118577648c067351f83e81)
+2026-02-20 16:28:24 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:27 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597707672&signature=ee6931ec44f51a91686273163b261063ecded21cca966d61aca2e50464840cd9)
+2026-02-20 16:28:27 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:30 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597710681&signature=af583156055c3f3af6d9daf7e0b5fea4a7a1b42b579ee69a4e9118cd7fcd0b77)
+2026-02-20 16:28:30 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:33 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597713694&signature=98158455ee2d54c867bed5dc7d5b5d0d70635d75766f1e6a6d8491a12d50ec76)
+2026-02-20 16:28:33 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:36 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597716702&signature=6ee7023cd925fa4e1d6082f5d2c766a451862e92c18922e5271663b3d98fef06)
+2026-02-20 16:28:36 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:39 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597719711&signature=5afffce4810ace0c3515dee2f3f33772e6a2923f9682ef373b74e48402237825)
+2026-02-20 16:28:39 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:42 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597722720&signature=093fea01182677b0534d40f577997811ec591c80af39da0431e6b9e04cea255e)
+2026-02-20 16:28:42 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:45 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:28:45 |ERROR |Integrity check failed: Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597725736&signature=3749c49128ed6b6b83c9b4b367bfc9618a65dd13f0a749151fdb909d29d4c6ac). Pausing trading for safety.
+2026-02-20 16:28:45 |INFO  |HEALTH | uptime=751s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:28:45 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597725742&signature=358636bf36438706b1c3e8f3990ca5cb4faf5ae886c81d3ae35b1e99acf9cdf8)
+2026-02-20 16:28:45 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:48 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597728750&signature=9fa9fb03cd9930dd3e10835720d9dc1f7ccba653680e9ac84d7218004ea1cc2b)
+2026-02-20 16:28:48 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:51 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597731759&signature=9d0ec065adfcfb296cd18a71aa1c1484436b2942d5d8a65c04643b4cb7b9b06d)
+2026-02-20 16:28:51 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:54 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597734768&signature=37e4e342604222b4e862361e7c86b4d975062322327c9ddcd4e6a274058880b8)
+2026-02-20 16:28:54 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:28:57 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597737781&signature=1ee2c53089e0f780478732bb2031646da912d8e7f0fdd41985be020aa4fb3d23)
+2026-02-20 16:28:57 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:00 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597740789&signature=1007d5fa7b6882fd03cea5c7d011f81a7e3efeeb163a277f6656b44267401d51)
+2026-02-20 16:29:00 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:03 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597743797&signature=fb8b3e2909b7ff5b39689531d3301688da58df6e32c0cf41e7870468052a5a92)
+2026-02-20 16:29:03 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:06 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597746805&signature=3285cba6f04ebfcaa2226bf69cf410426877b4b976650bc0e9a91594dbe59554)
+2026-02-20 16:29:06 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:09 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597749818&signature=b2ce21c6380bca53506ca689f2712d191d9fad04969d36f2fed11989365cb642)
+2026-02-20 16:29:09 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:12 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597752827&signature=cebb87686dfe192b7b0cf5be8f0367fc94139d4a313cdade02a4726bf86db4cd)
+2026-02-20 16:29:12 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:15 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597755835&signature=198898ca2e3760549c49fbc46ed931f654b45f92945f5779c0da9b1580cbf948)
+2026-02-20 16:29:15 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:18 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597758844&signature=d3047d4d18e3daf708f103cb7bec18fca3aec5cbc260e1d91108f55a55ea758f)
+2026-02-20 16:29:18 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:21 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597761858&signature=930538aff0901d2ee2d0d300b6c8d968b7b484850701b1ba28a4e08657769033)
+2026-02-20 16:29:21 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:24 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597764866&signature=f71e7494485511c8133ac4ca38db5ed9d06d4d5d92fe74c3add1b03bb9944108)
+2026-02-20 16:29:24 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:27 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597767874&signature=76913ce97a8acfd05652fe864c1ce6a0e1f20749d1f508df538760559dd562b7)
+2026-02-20 16:29:27 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:30 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771597770880&signature=26242b93cecb31041a8ddeecff05467b6e33c4e0f23e8bfebc417df42f7e5ffb)
+2026-02-20 16:29:30 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:29:47 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:29:48 |INFO  |HEALTH | uptime=813s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:30:48 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:30:49 |INFO  |HEALTH | uptime=874s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:31:52 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:31:53 |INFO  |HEALTH | uptime=939s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:32:56 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:32:56 |INFO  |HEALTH | uptime=1002s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:34:05 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771598035426&signature=4658272988d7dd1c486bf8362ac43edd99a5dc679ee9fedc40ef3d1479153cb1)
+2026-02-20 16:34:32 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:34:35 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:34:35 |ERROR |Integrity check failed: Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771598075706&signature=947f591018042b3a5e963b5f36f637852fbf52719d2beca5dc4debe7c4498786). Pausing trading for safety.
+2026-02-20 16:34:35 |INFO  |HEALTH | uptime=1101s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:34:35 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771598075713&signature=342f7a7eed38447cfc794ebe6eb20c5b8cf88ddeea97e5235718537dd2e1ae7e)
+2026-02-20 16:34:35 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:34:38 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771598078720&signature=e64dd731b7cc3e321f66e9cb91feacc15c646964c4898d6e84c84f364e8a1691)
+2026-02-20 16:34:38 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:34:41 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: error sending request for url (https://api.binance.com/api/v3/account?timestamp=1771598081727&signature=97aa0a02ebe34d1caef60a54e20059aa3489c0a24cb0594b2ae4ab8638b6efd5)
+2026-02-20 16:34:41 |ERROR |ERROR | ctx=sync_wallet | msg=RPC request failed: error sending request for url (https://arbitrum-mainnet.infura.io/v3/2e014e93223f438d98a62104a3672f94)
+2026-02-20 16:34:45 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:34:45 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:34:49 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:34:49 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:34:54 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:34:54 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:34:58 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:34:58 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:02 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:02 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:06 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:06 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:10 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:10 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:14 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:14 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:18 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:18 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:22 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:22 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:26 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:26 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:30 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:30 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:34 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:34 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:38 |INFO  |Watchdog: Full balance reconciliation (CEX & DEX)...
+2026-02-20 16:35:38 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:38 |ERROR |Integrity check failed: Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}. Pausing trading for safety.
+2026-02-20 16:35:38 |INFO  |HEALTH | uptime=1164s | last_trade=Nones | cb_open=false | pnl=$0.00 | limit_reached=false
+2026-02-20 16:35:39 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:39 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:43 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:43 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:47 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:47 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:51 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:51 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:56 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:35:56 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:36:00 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:36:00 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:36:04 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:36:04 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:36:08 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:36:08 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:36:12 |ERROR |EXCHANGE API ERROR [401 Unauthorized]: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}
+2026-02-20 16:36:12 |ERROR |ERROR | ctx=sync_binance | msg=Serialization error: Exchange Error: 401 Unauthorized, Body: {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}

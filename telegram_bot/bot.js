@@ -19,7 +19,7 @@ const bot = new Telegraf(BOT_TOKEN);
 let stopFlag = false;
 let lastUpdateId = 0;
 let lastSeen = 0;
-let botState = null; // Caches the rich metrics from the rust bot
+let botState = null;
 
 bot.start((ctx) => {
     ctx.reply(
@@ -64,7 +64,6 @@ bot.command('status', (ctx) => {
     const killSwitchStatus = stopFlag ? "ON (Paused)" : "OFF (Active)";
 
     if (!botState || !isOnline) {
-        // Fallback display if we don't have rich data yet
         return ctx.reply(
             `🤖 <b>Bot Status Report</b>\n` +
             `━━━━━━━━━━━━━━━━━━━━━━\n` +
