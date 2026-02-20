@@ -19,7 +19,7 @@ realtime-dashboard:
 arb_checker:
 	 cargo run --bin arb_checker
 arb_bot:
-	RUST_LOG=debug cargo run --bin arb_bot
+	caffeinate -s sh -c 'RUST_LOG=debug cargo run --bin arb_bot'
 run-impact-1:
 	cargo run -p pricing --bin impact_analyzer -- \
   0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc \

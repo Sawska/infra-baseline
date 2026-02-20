@@ -18,6 +18,7 @@ use inventory::tracker::{InventoryTracker, Venue};
 use log::{error, info, warn};
 use pricing::amm::Pool;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use serde_json::json;
 use std::collections::{HashMap, VecDeque};
 use std::env;
 use std::fs::{self, OpenOptions};
@@ -56,20 +57,20 @@ pub struct PerPairConfig {
 impl PerPairConfig {
     pub fn pepe_default() -> Self {
         Self {
-            trade_size: 1_500_000.0,
-            min_spread_bps: 80.0,
-            min_profit_usd: 0.05,
+            trade_size: 1_250_000.0,
+            min_spread_bps: 130.0,
+            min_profit_usd: 0.01,
             fee_structure: FeeStructure {
                 cex_taker_bps: 10.0,
-                dex_swap_bps: 30.0,
-                gas_cost_usd: 0.02,
+                dex_swap_bps: 1.0,
+                gas_cost_usd: 0.07,
             },
         }
     }
 
     pub fn eth_default() -> Self {
         Self {
-            trade_size: 0.005,
+            trade_size: 0.0026,
             min_spread_bps: 20.0,
             min_profit_usd: 0.02,
             fee_structure: FeeStructure {
@@ -92,8 +93,8 @@ struct ArbBot {
     telegram: Arc<TelegramAlert>,
     kill_switch: AutoKillSwitch,
     pairs: Vec<String>,
-    trade_size: f64,
     running: bool,
+    trading_active: bool,
     dry_run: bool,
     chain_client: Arc<ChainClient>,
     wallet: Arc<WalletManager>,
@@ -183,27 +184,32 @@ impl ArbBot {
             max_trade_pct: 0.20,
             max_position_per_token: 10.0,
             max_open_positions: 1,
-            max_drawdown_pct: 0.15,
+            max_drawdown_pct: 0.20,
             max_daily_loss: 10.0,
             max_trades_per_hour: 20,
             consecutive_loss_limit: 3,
             max_loss_per_trade: 5.0,
         };
 
-        let risk_manager = RiskManager::new(risk_limits, 100.0);
+        let risk_manager = RiskManager::new(risk_limits, 71.00);
         let validator = validator::PreTradeValidator::default();
         let kill_switch = AutoKillSwitch::new();
         let telegram = Arc::new(TelegramAlert::new(
             env::var("TELEGRAM_CHAT_ID").unwrap_or_default(),
         ));
 
-        if !Path::new(PNL_HISTORY_FILE).exists()
-            && let Ok(mut file) = OpenOptions::new()
-                .truncate(true)
-                .write(true)
-                .open(PNL_HISTORY_FILE)
-        {
-            writeln!(file, "Timestamp,SessionPnL,CumulativePnL,Drawdown").ok();
+        let path = Path::new(PNL_HISTORY_FILE);
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let file_exists = path.exists();
+
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+
+        if !file_exists {
+            writeln!(file, "Timestamp,SessionPnL,CumulativePnL,Drawdown")?;
         }
 
         let bot = Self {
@@ -217,8 +223,8 @@ impl ArbBot {
             telegram,
             kill_switch,
             pairs: config.pairs,
-            trade_size: config.trade_size,
             running: false,
+            trading_active: false,
             dry_run: config.dry_run,
             chain_client,
             wallet,
@@ -234,6 +240,20 @@ impl ArbBot {
 
         bot.sync_binance_balances().await?;
         bot.sync_wallet_balances().await?;
+
+        let state_payload = serde_json::json!({
+            "trading_active": bot.trading_active,
+            "dry_run": bot.dry_run,
+            "session_pnl": bot.session_pnl,
+            "cumulative_pnl": bot.cumulative_pnl,
+            "capital": bot.risk_manager.current_capital,
+            "drawdown": 0.0,
+            "trades_today": 0,
+            "wins": 0,
+            "losses": 0,
+            "uptime_secs": 0
+        });
+        bot.telegram.update_bot_state(state_payload).await;
 
         Ok(bot)
     }
@@ -277,22 +297,37 @@ impl ArbBot {
             let base_asset = parts[0];
 
             if let Some(balance) = balances.get(base_asset) {
-                let free_amount = balance.free.to_human().to_f64().unwrap_or(0.0);
+                let raw_amount = balance.free.to_human().to_f64().unwrap_or(0.0);
+                let floor_amount = raw_amount.floor();
 
-                if free_amount > 0.0 {
-                    info!("Flattening {} (Amount: {})", base_asset, free_amount);
-                    let aggressive_price = rust_decimal::Decimal::from_f64(0.00000001).unwrap();
-                    let amount =
-                        TokenAmount::from_human(&free_amount.to_string(), 18, None).unwrap();
+                if floor_amount > 0.0 {
+                    info!(
+                        "Flattening {} (Original: {}, Floor: {})",
+                        base_asset, raw_amount, floor_amount
+                    );
 
+                    let amount = match TokenAmount::from_human(&floor_amount.to_string(), 18, None)
+                    {
+                        Ok(a) => a,
+                        Err(_) => continue,
+                    };
+
+                    info!("Placing emergency MARKET sell for {}", pair);
                     match self
                         .exchange
-                        .create_limit_ioc_order(pair, "sell", amount, aggressive_price)
+                        .create_market_order(pair, "sell", amount)
                         .await
                     {
                         Ok(order) => info!("Flattened {}: Order ID {}", base_asset, order.id),
-                        Err(e) => error!("Failed to flatten {}: {:?}", base_asset, e),
+                        Err(e) => {
+                            error!("Failed to flatten {} via market order: {:?}", base_asset, e)
+                        }
                     }
+                } else if raw_amount > 0.0 {
+                    info!(
+                        "Dust balance detected for {} ({}), skipping flatten.",
+                        base_asset, raw_amount
+                    );
                 }
             }
         }
@@ -300,7 +335,6 @@ impl ArbBot {
 
     /// Generates an HTML file with an ECharts PnL graph
     fn generate_pnl_chart_html(&self) {
-        // Read CSV data
         let mut file = match fs::File::open(PNL_HISTORY_FILE) {
             Ok(f) => f,
             Err(_) => return,
@@ -318,7 +352,6 @@ impl ArbBot {
             let parts: Vec<&str> = line.split(',').collect();
             if parts.len() >= 4 {
                 if let Ok(ts) = parts[0].parse::<u64>() {
-                    // Convert JS timestamp (ms) for charts
                     dates.push(ts * 1000);
                 }
                 if let Ok(cp) = parts[2].parse::<f64>() {
@@ -353,7 +386,6 @@ impl ArbBot {
         var pnls = {:?};
         var drawdowns = {:?};
 
-        // Format dates
         var formattedDates = dates.map(ts => new Date(ts).toLocaleTimeString());
 
         var option = {{
@@ -393,9 +425,15 @@ impl ArbBot {
             dates, pnls, drawdowns
         );
 
-        if let Err(e) = fs::write(PNL_CHART_FILE, html_content) {
-            error!("Failed to write HTML chart: {}", e);
+        let path = Path::new(PNL_CHART_FILE);
+
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent)
+                .map_err(|e| anyhow::anyhow!("Failed to create chart directory: {}", e));
         }
+
+        let _ = fs::write(path, html_content)
+            .map_err(|e| anyhow::anyhow!("Failed to write PnL chart file: {}", e));
     }
 
     fn save_pnl_snapshot(&self) {
@@ -412,35 +450,28 @@ impl ArbBot {
             .unwrap_or_default()
             .as_secs();
 
-        if let Ok(mut file) = OpenOptions::new().append(true).open(PNL_HISTORY_FILE) {
-            writeln!(
-                file,
-                "{},{:.4},{:.4},{:.2}",
-                now, self.session_pnl, self.cumulative_pnl, drawdown
-            )
-            .ok();
+        let mut file = match OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(PNL_HISTORY_FILE)
+        {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Failed to open PNL history file: {e}");
+                return;
+            }
+        };
+
+        if let Err(e) = writeln!(
+            file,
+            "{},{:.4},{:.4},{:.2}",
+            now, self.session_pnl, self.cumulative_pnl, drawdown
+        ) {
+            eprintln!("Failed to write PNL snapshot: {e}");
+            return;
         }
 
         self.generate_pnl_chart_html();
-    }
-
-    fn generate_ascii_chart(&self) -> String {
-        if self.daily_trades.is_empty() {
-            return "No trades".to_string();
-        }
-
-        let chart: String = self
-            .daily_trades
-            .iter()
-            .map(|&pnl| if pnl >= 0.0 { "🟩" } else { "🟥" })
-            .collect();
-
-        if chart.chars().count() > 10 {
-            let skip = chart.chars().count() - 10;
-            format!("...{}", chart.chars().skip(skip).collect::<String>())
-        } else {
-            chart
-        }
     }
 
     pub fn generate_daily_summary(&self) -> String {
@@ -453,8 +484,6 @@ impl ArbBot {
         let losses = self.daily_trades.len() - wins;
         let win_rate = (wins as f64 / self.daily_trades.len() as f64) * 100.0;
 
-        let pnl_chart = self.generate_ascii_chart();
-
         let current_capital = self.risk_manager.current_capital;
         let initial_capital = self.risk_manager.initial_capital;
         let drawdown = if initial_capital > 0.0 {
@@ -465,20 +494,16 @@ impl ArbBot {
 
         format!(
             "<b>Daily Summary Report</b>\n\n\
-            Trades: {} ({}W / {}L)\n\
-            Win Rate: {:.0}%\n\
-            Trend: {}\n\n\
-            PnL: <b>${:+.2}</b>\n\
-            Cumulative PnL: ${:+.2}\n\
-            Drawdown: {:.1}%\n\
-            Capital: ${:.2}",
+        Trades: {} ({}W / {}L)\n\
+        Win Rate: {:.0}%\n\n\
+        Cumulative PnL: ${:+.2}\n\
+        Drawdown: {:.1}%\n\
+        Capital: ${:.2}",
             self.daily_trades.len(),
             wins,
             losses,
             win_rate,
-            pnl_chart,
             total_pnl,
-            self.cumulative_pnl,
             drawdown,
             current_capital
         )
@@ -487,6 +512,7 @@ impl ArbBot {
     fn record_error(&mut self) {
         self.error_timestamps.push_back(Instant::now());
     }
+
     fn get_error_count_last_hour(&mut self) -> usize {
         let hour_ago = Instant::now() - Duration::from_secs(3600);
         while let Some(timestamp) = self.error_timestamps.front() {
@@ -553,7 +579,6 @@ impl ArbBot {
         }
         let mut inventory = self.shared_inventory.lock().await;
         inventory.update_from_wallet(wallet_amounts);
-        info!("[Sync] Wallet inventory updated successfully.");
         Ok(())
     }
 
@@ -580,6 +605,8 @@ impl ArbBot {
 
     pub async fn run(&mut self) {
         self.running = true;
+        self.trading_active = true;
+
         if self.dry_run {
             info!("DRY RUN MODE ENABLED - No trades will be executed");
         }
@@ -594,45 +621,48 @@ impl ArbBot {
             self.update_heartbeat();
 
             if last_kill_switch_check.elapsed() >= Duration::from_secs(10) {
+                let kill_active = is_kill_switch_active();
                 let error_count = self.get_error_count_last_hour();
 
-                if self
-                    .kill_switch
-                    .check(&self.risk_manager, error_count, &self.telegram)
-                    .await
+                if self.trading_active {
+                    if kill_active {
+                        warn!("KILL SWITCH FILE DETECTED. Pausing Trading.");
+                        self.telegram
+                            .send(
+                                "🛑 Manual Kill Switch (File) Detected! Flattening & Pausing.",
+                                true,
+                            )
+                            .await;
+                        self.emergency_flatten().await;
+                        self.trading_active = false;
+                    } else if self.telegram.check_for_stop_command().await {
+                        warn!("Remote Stop Command Received via Telegram. Pausing Trading.");
+                        self.emergency_flatten().await;
+                        self.trading_active = false;
+                    } else if self
+                        .kill_switch
+                        .check(&self.risk_manager, error_count, &self.telegram)
+                        .await
+                    {
+                        warn!("AUTO KILL SWITCH TRIGGERED. Pausing Trading.");
+                        self.emergency_flatten().await;
+                        self.trading_active = false;
+                    }
+                } else if !kill_active
+                    && !self.telegram.check_for_stop_command().await
+                    && error_count == 0
+                    && self.risk_manager.daily_pnl > -self.risk_manager.limits.max_daily_loss
                 {
-                    warn!("AUTO KILL SWITCH TRIGGERED. Shutting down.");
-                    self.emergency_flatten().await;
-                    self.running = false;
-                    break;
-                }
-
-                if self.telegram.check_for_stop_command().await {
-                    self.kill_switch
-                        .trigger("Remote Stop Command Received", &self.telegram)
+                    info!("Kill switch conditions cleared. Resuming trading...");
+                    self.telegram
+                        .send("▶️ <b>Kill switch cleared. Bot resuming.</b>", false)
                         .await;
-                    self.emergency_flatten().await;
-                    self.running = false;
-                    break;
+                    self.trading_active = true;
                 }
                 last_kill_switch_check = Instant::now();
-
-                if is_kill_switch_active() {
-                    warn!("KILL SWITCH FILE DETECTED. Shutting down.");
-                    self.telegram
-                        .send(
-                            "🛑 Manual Kill Switch (File) Detected! Flattening & Shutting down.",
-                            true,
-                        )
-                        .await;
-                    self.emergency_flatten().await;
-                    self.running = false;
-                    break;
-                }
             }
 
             if last_reset.elapsed().as_secs() >= 86400 {
-                info!("Resetting daily risk limits...");
                 self.risk_manager.reset_daily();
                 let summary = self.generate_daily_summary();
                 self.telegram.send(&summary, false).await;
@@ -645,12 +675,38 @@ impl ArbBot {
                 self.save_pnl_snapshot();
 
                 if let Err(e) = self.verify_balances().await {
-                    error!("Integrity check failed: {}. Stopping for safety.", e);
-                    break;
+                    error!("Integrity check failed: {}. Pausing trading for safety.", e);
+                    self.trading_active = false;
                 }
 
+                // Push status dashboard data to Node.js Bridge
+                let wins = self.daily_trades.iter().filter(|&&p| p > 0.0).count();
+                let losses = self.daily_trades.len() - wins;
+                let initial_capital = self.risk_manager.initial_capital;
+                let current_capital = self.risk_manager.current_capital;
+                let drawdown = if initial_capital > 0.0 {
+                    ((initial_capital - current_capital) / initial_capital * 100.0).max(0.0)
+                } else {
+                    0.0
+                };
+
+                let state_payload = json!({
+                    "trading_active": self.trading_active,
+                    "dry_run": self.dry_run,
+                    "session_pnl": self.session_pnl,
+                    "cumulative_pnl": self.cumulative_pnl,
+                    "capital": current_capital,
+                    "drawdown": drawdown,
+                    "trades_today": self.daily_trades.len(),
+                    "wins": wins,
+                    "losses": losses,
+                    "uptime_secs": self.start_time.elapsed().as_secs()
+                });
+
+                self.telegram.update_bot_state(state_payload).await;
+
                 let health = monitoring::BotHealth {
-                    is_running: self.running,
+                    is_running: self.trading_active,
                     uptime_seconds: self.start_time.elapsed().as_secs(),
                     last_trade_age_seconds: monitoring::seconds_since(self.last_trade_time),
                     circuit_breaker_open: self.executor.is_circuit_open().await,
@@ -670,12 +726,16 @@ impl ArbBot {
                 monitoring::log_error("sync_wallet", &e.to_string());
             }
 
-            if let Err(e) = self.tick().await {
-                self.record_error();
-                monitoring::log_error("tick", &e.to_string());
-                sleep(Duration::from_secs(5)).await;
+            if self.trading_active {
+                if let Err(e) = self.tick().await {
+                    self.record_error();
+                    monitoring::log_error("tick", &e.to_string());
+                    sleep(Duration::from_secs(5)).await;
+                } else {
+                    sleep(Duration::from_secs(1)).await;
+                }
             } else {
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_secs(3)).await;
             }
         }
 
@@ -690,16 +750,6 @@ impl ArbBot {
     }
 
     async fn tick(&mut self) -> Result<()> {
-        for pair in &self.pairs {
-            let size = if pair.contains("ETH") {
-                0.0035
-            } else {
-                self.trade_size
-            };
-
-            self.generator.queue_candidate(pair, size).await;
-        }
-
         if self.executor.is_circuit_open().await {
             info!("Circuit breaker open - skipping tick");
             return Ok(());
@@ -782,7 +832,7 @@ impl ArbBot {
 
             let trade_val_usd = best_signal.size * best_signal.cex_price;
             info!(
-                "Checking Risk: Size={:.4} ETH | Value=${:.2} | Max Allowed=${:.2}",
+                "Checking Risk: Size={:.4}  | Value=${:.2} | Max Allowed=${:.2}",
                 best_signal.size, trade_val_usd, self.risk_manager.limits.max_trade_usd
             );
 
@@ -797,7 +847,7 @@ impl ArbBot {
                         )
                         .await;
                     self.emergency_flatten().await;
-                    self.running = false;
+                    self.trading_active = false;
                 }
                 return Ok(());
             }
@@ -835,7 +885,7 @@ impl ArbBot {
                     )
                     .await;
                 self.emergency_flatten().await;
-                self.running = false;
+                self.trading_active = false;
                 return Ok(());
             }
 
@@ -904,7 +954,7 @@ impl ArbBot {
 
         if eth_dex_diff > threshold {
             let msg = format!(
-                "🚨 DEX BALANCE MISMATCH! ETH Actual: {}, Expected: {}, Diff: {}",
+                "DEX BALANCE MISMATCH! ETH Actual: {}, Expected: {}, Diff: {}",
                 actual_eth_dex, expected_eth_dex, eth_dex_diff
             );
             error!("{}", msg);
@@ -912,7 +962,7 @@ impl ArbBot {
                 .trigger("DEX Integrity Failure", &self.telegram)
                 .await;
             self.emergency_flatten().await;
-            self.running = false;
+            self.trading_active = false;
         }
 
         for pair in &self.pairs {
@@ -936,19 +986,17 @@ impl ArbBot {
                         .trigger("CEX Integrity Failure", &self.telegram)
                         .await;
                     self.emergency_flatten().await;
-                    self.running = false;
+                    self.trading_active = false;
                 }
             }
         }
 
-        info!("Balance reconciliation successful. All systems green.");
         Ok(())
     }
 }
 
 struct BotConfig {
     pairs: Vec<String>,
-    trade_size: f64,
     simulation: bool,
     dry_run: bool,
     webhook_url: Option<String>,
@@ -986,30 +1034,31 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9".to_string());
     token_addresses.insert("USDT".to_string(), Address::from_string(&usdt_addr)?);
 
-    let weth_addr = "0x82aF49447D8a07e3bd95BD0d56f352415231aa11";
-    token_addresses.insert("ETH".to_string(), Address::from_string(weth_addr)?);
+    let weth_addr = env::var("ARBITRUM_WETH")
+        .unwrap_or_else(|_| "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string());
+    token_addresses.insert("WETH".to_string(), Address::from_string(&weth_addr)?);
 
     let mut dex_pools = HashMap::new();
 
     dex_pools.insert(
         "PEPE/USDT".to_string(),
-        "0xcd518702e7d8f16d8a6407bf5d22e0f0eec15162".to_string(),
+        env::var("PEPE_USDT_POOL")
+            .unwrap_or_else(|_| "0xcd518702e7d8f16d8a6407bf5d22e0f0eec15162".to_string()),
     );
 
     dex_pools.insert(
-        "ETH/USDT".to_string(),
-        "0x641C00A822e83b0e888E9406456566468bb0841f".to_string(),
+        "WETH/USDT".to_string(),
+        "0x641c00a822e8b671738d32a431a4fb6074e5c79d".to_string(),
     );
 
     let mut pair_configs = HashMap::new();
     pair_configs.insert("PEPE/USDT".to_string(), PerPairConfig::pepe_default());
-    pair_configs.insert("ETH/USDT".to_string(), PerPairConfig::eth_default());
+    pair_configs.insert("WETH/USDT".to_string(), PerPairConfig::eth_default());
 
     let config = BotConfig {
-        pairs: vec!["PEPE/USDT".to_string(), "ETH/USDT".to_string()],
-        trade_size: 1500000.0,
+        pairs: vec!["PEPE/USDT".to_string(), "WETH/USDT".to_string()],
         simulation: false,
-        dry_run: true,
+        dry_run: false,
         webhook_url: None,
         dex_router: Some(
             env::var("ARBITRUM_ROUTER")

@@ -131,7 +131,6 @@ impl SignalGenerator {
         let now = SignalGenerator::get_now();
 
         if self.in_cooldown(pair, now) {
-            info!("Skipping {} due to cooldown.", pair);
             return None;
         }
         let prices = match self.fetch_prices(pair, size).await {
@@ -152,7 +151,7 @@ impl SignalGenerator {
         let spread_b = (prices.cex_bid - prices.dex_buy) / prices.dex_buy * 10_000.0;
 
         info!(
-            "📊{} Spreads | BuyCex->SellDex: {:.2} bps | BuyDex->SellCex: {:.2} bps | Min Required: {:.2}",
+            "{} Spreads | BuyCex->SellDex: {:.2} bps | BuyDex->SellCex: {:.2} bps | Min Required: {:.2}",
             pair, spread_a, spread_b, self.config.min_spread_bps
         );
 
@@ -322,8 +321,8 @@ impl SignalGenerator {
                 if !has_base || !has_quote {
                     warn!(
                         "[Inventory] Insufficient funds for BuyDexSellCex on {}: \
-                    CEX {} available: {:.2} (need {:.2}), \
-                    DEX {} available: {:.2} (need {:.2})",
+CEX {} available: {:.4} (need {:.4}), \
+DEX {} available: {:.2} (need {:.2})",
                         pair, base, base_cex, size, quote, quote_dex, required_quote
                     );
                 }

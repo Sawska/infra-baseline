@@ -10,3 +10,5 @@ pnl_history.html
 arb_opportunities.csv
 telegram_bot/package-lock.json
 telegram_bot/node_modules
+pnl_history.csv
+pnl_chart.html

@@ -3,8 +3,8 @@
 ### Numbers
 
 * **Starting capital:** $100.00
-* **Ending capital:** ~$95.00 (Estimated due to gas fees, failed tx costs, and slippage)
-* **PnL:** -$5.00 (Mostly gas fees for failed transactions and initial setup costs)
+* **Ending capital:** ~$85.00 (Estimated due to gas fees, failed tx costs, and slippage)
+* **PnL:** -$15.00 (Mostly gas fees for failed transactions and initial setup costs)
 * **Trades:** 0 completed full cycles (Many partial executions/reverts)
 * **Win rate:** 0%
 * **Best trade:** None (Closest was the PEPE DEX buy that executed but couldn't sell on CEX)

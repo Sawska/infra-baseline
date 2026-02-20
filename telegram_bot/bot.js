@@ -19,6 +19,7 @@ const bot = new Telegraf(BOT_TOKEN);
 let stopFlag = false;
 let lastUpdateId = 0;
 let lastSeen = 0;
+let botState = null; // Caches the rich metrics from the rust bot
 
 bot.start((ctx) => {
     ctx.reply(
@@ -38,7 +39,7 @@ bot.command('stop', (ctx) => {
 
 bot.command('resume', (ctx) => {
     stopFlag = false;
-    ctx.reply("▶️ Kill switch cleared. Bot resuming.");
+    ctx.reply("▶️ Bridge kill switch cleared. \n\nBot will resume trading IF internal safety limits (like error counts) allow it.");
     console.log("[Telegram] /resume received");
 });
 
@@ -46,12 +47,14 @@ bot.command('status', (ctx) => {
     const now = Date.now();
     let statusMsg = "🔴 Offline / Unknown";
     let lastSeenText = "Never";
+    let isOnline = false;
 
     if (lastSeen > 0) {
         const diffSeconds = Math.floor((now - lastSeen) / 1000);
         lastSeenText = `${diffSeconds}s ago`;
 
-        if (diffSeconds < 65) {
+        if (diffSeconds < 90) {
+            isOnline = true;
             statusMsg = "🟢 Online & Healthy";
         } else {
             statusMsg = "⚠️ Unresponsive (Hanging?)";
@@ -60,14 +63,54 @@ bot.command('status', (ctx) => {
 
     const killSwitchStatus = stopFlag ? "ON (Paused)" : "OFF (Active)";
 
-    ctx.reply(
-        `🤖 **Bot Status Report**\n` +
-        `-----------------------\n` +
-        `Status: ${statusMsg}\n` +
-        `Last Heartbeat: ${lastSeenText}\n` +
-        `Kill Switch: ${killSwitchStatus}\n` +
-        `Port: ${PORT}`
-    );
+    if (!botState || !isOnline) {
+        // Fallback display if we don't have rich data yet
+        return ctx.reply(
+            `🤖 <b>Bot Status Report</b>\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `Status: ${statusMsg}\n` +
+            `Last Heartbeat: ${lastSeenText}\n` +
+            `Kill Switch: ${killSwitchStatus}\n` +
+            `Port: ${PORT}\n\n` +
+            `<i>(Waiting for next 60s sync to display full PnL dashboard...)</i>`,
+            { parse_mode: 'HTML' }
+        );
+    }
+
+    const mode = botState.dry_run ? "🧪 Dry Run" : "⚡ Live Trading";
+    const active = botState.trading_active ? "▶️ Active" : "⏸️ Paused";
+
+    const formatMoney = (val) => val >= 0 ? `+$${val.toFixed(2)}` : `-$${Math.abs(val).toFixed(2)}`;
+
+    const winRate = botState.trades_today > 0
+        ? ((botState.wins / botState.trades_today) * 100).toFixed(1)
+        : "0.0";
+
+    const h = Math.floor(botState.uptime_secs / 3600);
+    const m = Math.floor((botState.uptime_secs % 3600) / 60);
+    const uptimeStr = `${h}h ${m}m`;
+
+    const msg = `📊 <b>Arbitrage Bot Status</b>
+━━━━━━━━━━━━━━━━━━━
+${active} | ${mode}
+⏱️ <b>Uptime:</b> ${uptimeStr}
+📡 <b>Last Sync:</b> ${lastSeenText}
+
+💰 <b>Performance</b>
+• Session PnL: ${formatMoney(botState.session_pnl)}
+• Total PnL: ${formatMoney(botState.cumulative_pnl)}
+• Capital: $${botState.capital.toFixed(2)}
+• Drawdown: ${botState.drawdown.toFixed(2)}%
+
+📈 <b>Trades Today</b>
+• Total: ${botState.trades_today} (${botState.wins}W / ${botState.losses}L)
+• Win Rate: ${winRate}%
+
+🔌 <b>System</b>
+• Kill Switch (Node): ${killSwitchStatus}
+━━━━━━━━━━━━━━━━`;
+
+    ctx.reply(msg, { parse_mode: 'HTML' });
 });
 
 bot.launch().then(() => {
@@ -84,6 +127,12 @@ app.post("/sendMessage", async (req, res) => {
         console.error("Send error:", err.message);
         res.status(500).json({ ok: false, description: err.message });
     }
+});
+
+app.post("/updateState", (req, res) => {
+    lastSeen = Date.now();
+    botState = req.body;
+    res.json({ ok: true });
 });
 
 app.get("/getUpdates", (req, res) => {

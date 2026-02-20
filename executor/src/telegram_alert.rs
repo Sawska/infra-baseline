@@ -68,6 +68,32 @@ impl TelegramAlert {
         }
     }
 
+    /// Pushes the latest internal bot state to the Node.js bridge for the /status command
+    pub async fn update_bot_state(&self, payload: serde_json::Value) {
+        if self.chat_id.is_empty() {
+            return;
+        }
+
+        let client = reqwest::Client::new();
+        let url = format!("{}/updateState", self.base_url);
+
+        match client
+            .post(&url)
+            .json(&payload)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if !resp.status().is_success() {
+                    let err_text = resp.text().await.unwrap_or_default();
+                    error!("Bridge state update error: {}", err_text);
+                }
+            }
+            Err(e) => error!("Failed to send bot state to bridge: {}", e),
+        }
+    }
+
     /// Polls for the latest message to see if a "/stop" command was sent.
     pub async fn check_for_stop_command(&self) -> bool {
         let url = format!("{}/getUpdates", self.base_url);

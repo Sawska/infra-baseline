@@ -1,7 +1,3 @@
-Here is the **Day 1** entry formatted strictly according to your requested template. Since you hadn't funded the wallets yet, the financial numbers reflect the "Dry Run" status.
-
----
-
 ## Day 1 — February 17, 2026
 
 ### Numbers

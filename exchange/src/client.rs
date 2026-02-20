@@ -375,7 +375,7 @@ impl ExchangeClient {
             symbol_clean = symbol_clean.replace("WETH", "ETH");
             symbol_clean = symbol_clean.replace("WBTC", "BTC");
         }
-        let price_str = format!("{:.2}", price);
+        let price_str = price.normalize().to_string();
         let (endpoint, params) = match self.exchange_type {
             ExchangeType::Binance => (
                 "/api/v3/order",
@@ -673,5 +673,42 @@ impl ExchangeClient {
                 .to_lowercase(),
             timestamp: Self::get_timestamp(),
         })
+    }
+
+    pub async fn create_market_order(
+        &self,
+        symbol: &str,
+        side: &str,
+        amount: TokenAmount,
+    ) -> Result<OrderResult, ArbError> {
+        let mut symbol_clean = symbol.replace("/", "");
+        if self.exchange_type == ExchangeType::Binance {
+            symbol_clean = symbol_clean.replace("WETH", "ETH");
+            symbol_clean = symbol_clean.replace("WBTC", "BTC");
+        }
+        let (endpoint, params) = match self.exchange_type {
+            ExchangeType::Binance => (
+                "/api/v3/order",
+                format!(
+                    "symbol={}&side={}&type=MARKET&quantity={}",
+                    symbol_clean,
+                    side.to_uppercase(),
+                    amount.to_human()
+                ),
+            ),
+            ExchangeType::Bybit => (
+                "/v5/order/create",
+                serde_json::json!({
+                    "category": "spot", "symbol": symbol_clean, "side": side.to_uppercase(),
+                    "orderType": "Market", "qty": amount.to_human()
+                })
+                .to_string(),
+            ),
+        };
+
+        let data = self
+            .signed_request("POST", endpoint, &params, RequestPriority::High)
+            .await?;
+        self.map_order_response(data, symbol)
     }
 }

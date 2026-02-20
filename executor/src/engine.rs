@@ -944,7 +944,6 @@ impl Executor {
             if !receipt.status {
                 return Err("Approve reverted on-chain".to_string());
             }
-            info!("Approval confirmed: {}", receipt.tx_hash);
         }
         Ok(())
     }

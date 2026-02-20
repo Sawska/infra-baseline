@@ -1,6 +1,5 @@
 use crate::client::ExchangeType;
 use anyhow::{Context, Result};
-use log::warn;
 use std::env;
 
 #[derive(Debug, Clone)]
@@ -34,7 +33,6 @@ impl ExchangeConfig {
             == "true";
 
         let (binance_http_url, binance_ws_url, cex_fee_bps) = if production {
-            warn!("PRODUCTION MODE ENABLED - REAL MONEY TRADING");
             (
                 "https://api.binance.com".to_string(),
                 "wss://stream.binance.com:9443/ws".to_string(),
