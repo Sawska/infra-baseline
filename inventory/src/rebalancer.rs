@@ -70,7 +70,6 @@ impl<'a> RebalancePlanner<'a> {
         }
     }
 
-    /// Check all tracked assets for skew.
     pub fn check_all(&self) -> Vec<serde_json::Value> {
         let mut all_assets = std::collections::HashSet::new();
         for venue_balances in self.tracker.balances.values() {
@@ -85,7 +84,6 @@ impl<'a> RebalancePlanner<'a> {
             .collect()
     }
 
-    /// Generate transfer plan to rebalance a specific asset.
     pub fn plan(&self, asset: &str) -> Vec<TransferPlan> {
         let skew = self.tracker.skew(asset);
         if !skew["needs_rebalance"].as_bool().unwrap_or(false) {

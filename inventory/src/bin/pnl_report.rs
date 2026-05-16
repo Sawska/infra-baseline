@@ -9,7 +9,6 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
-/// Internal event enum to handle updates from multiple sources
 enum MarketUpdate {
     Binance(OrderBook),
     Bybit(OrderBook),
@@ -91,8 +90,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-/// Checks for profitable spread between two order books.
-/// Simulates a "Paper Trade" if spread covers fees.
 fn check_arb(bin: &OrderBook, byb: &OrderBook, id_counter: usize) -> Option<ArbRecord> {
     let fee_rate = dec!(0.001);
     let trade_amt = dec!(1.0);
@@ -176,7 +173,6 @@ fn check_arb(bin: &OrderBook, byb: &OrderBook, id_counter: usize) -> Option<ArbR
     None
 }
 
-/// Renders the TUI
 fn render_dashboard(engine: &PnLEngine, ob_bin: &Option<OrderBook>, ob_by: &Option<OrderBook>) {
     let s = engine.summary();
 

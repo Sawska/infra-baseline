@@ -2,6 +2,7 @@ use arb_core::Address;
 use exchange::client::{ExchangeClient, ExchangeType};
 use exchange::config::ExchangeConfig;
 use executor::engine::{Executor, ExecutorConfig, ExecutorState};
+use executor::gas_oracle::{GasOracle, safety_check_with_gas};
 use executor::kill_switch::AutoKillSwitch;
 use executor::monitoring;
 use executor::position_limits::{RiskLimits, RiskManager};
@@ -16,7 +17,6 @@ use strategy::signal::{Direction, Signal};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 
-/// Helper to setup an Executor for testing
 async fn setup_executor(config: ExecutorConfig) -> Executor {
     let ex_config = ExchangeConfig {
         api_key: "test".to_string(),
@@ -466,7 +466,7 @@ fn test_validator_signal_sanity() {
 
 #[test]
 fn test_validator_price_feed_deviation() {
-    let validator = PreTradeValidator::new(5); // Window size 5
+    let validator = PreTradeValidator::new(5);
     let pair = "ETH/USDC";
 
     validator.validate_price_feed(100.0, pair);
@@ -566,4 +566,74 @@ async fn test_telegram_alert_logic() {
 
     let has_stop = alert.check_for_stop_command().await;
     assert!(!has_stop);
+}
+
+#[cfg(test)]
+mod tests {
+    use executor::gas_oracle::gas_units;
+
+    use super::*;
+
+    fn oracle_with_history() -> GasOracle {
+        let mut o = GasOracle::new(30.0, 0.1, 3_000.0);
+        for gwei in [28.0, 31.0, 29.0, 35.0, 27.0, 32.0] {
+            o.update(gwei);
+        }
+        o
+    }
+
+    #[test]
+    fn pessimistic_is_above_ewm() {
+        let o = oracle_with_history();
+        assert!(
+            o.pessimistic_estimate() >= o.current_gwei(),
+            "pessimistic estimate must be ≥ EWM mean"
+        );
+    }
+
+    #[test]
+    fn std_dev_is_positive_after_variance() {
+        let o = oracle_with_history();
+        assert!(o.std_dev() > 0.0);
+    }
+
+    #[test]
+    fn net_profit_subtracts_gas() {
+        let o = GasOracle::new(30.0, 0.1, 3_000.0);
+        let (net, gas_cost) = o.net_profit_usd(20.0, gas_units::UNISWAP_V3_SWAP);
+        assert!((gas_cost - 14.40).abs() < 0.01, "gas_cost={gas_cost}");
+        assert!((net - (20.0 - 14.40)).abs() < 0.01, "net={net}");
+    }
+
+    #[test]
+    fn safety_gate_rejects_negative_net() {
+        let o = GasOracle::new(50.0, 0.1, 3_000.0);
+        let result = safety_check_with_gas(5.0, gas_units::FLASH_LOAN_ARB, &o);
+        assert!(result.is_err(), "should reject when gas > profit");
+    }
+
+    #[test]
+    fn safety_gate_rejects_high_gas_ratio() {
+        let o = GasOracle::new(100.0, 0.1, 4_000.0);
+        let result = safety_check_with_gas(4.0, gas_units::UNISWAP_V2_SWAP, &o);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn safety_gate_passes_profitable_trade() {
+        let o = GasOracle::new(5.0, 0.1, 2_000.0);
+        let result = safety_check_with_gas(10.0, gas_units::UNISWAP_V3_SWAP, &o);
+        assert!(result.is_ok());
+        let net = result.unwrap();
+        assert!((net - 8.40).abs() < 0.01, "net={net}");
+    }
+
+    #[test]
+    fn eth_price_update_changes_cost() {
+        let mut o = GasOracle::new(30.0, 0.1, 3_000.0);
+        let cost_before = o.estimated_cost_usd(gas_units::UNISWAP_V3_SWAP);
+        o.set_eth_price(6_000.0);
+        let cost_after = o.estimated_cost_usd(gas_units::UNISWAP_V3_SWAP);
+        assert!((cost_after / cost_before - 2.0).abs() < 1e-9);
+    }
 }

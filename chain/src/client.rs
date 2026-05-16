@@ -66,7 +66,6 @@ impl ChainClient {
         }
     }
 
-    /// Executes a future with retry logic
     async fn execute_with_retry<F, Fut, T>(&self, f: F) -> Result<T, ChainError>
     where
         F: Fn() -> Fut,

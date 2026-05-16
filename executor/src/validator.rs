@@ -2,11 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::RwLock;
 use strategy::signal::Signal;
 
-/// Sanity checks before every trade to prevent execution on bad data.
 pub struct PreTradeValidator {
-    /// Stores recent prices to detect anomalies: Pair -> Window of prices
     price_history: RwLock<HashMap<String, VecDeque<f64>>>,
-    /// Max history length per pair
     window_size: usize,
 }
 
@@ -24,7 +21,6 @@ impl PreTradeValidator {
         }
     }
 
-    /// Validates the signal against hard sanity limits.
     pub fn validate_signal(&self, signal: &Signal) -> (bool, String) {
         if signal.cex_price <= 0.0 {
             return (false, "Invalid CEX price".to_string());
@@ -56,8 +52,6 @@ impl PreTradeValidator {
         (true, "OK".to_string())
     }
 
-    /// Checks if a price deviates significantly from its recent average.
-    /// Also updates the history with the new price.
     pub fn validate_price_feed(&self, price: f64, pair: &str) -> (bool, String) {
         if price <= 0.0 {
             return (false, "Price must be positive".to_string());

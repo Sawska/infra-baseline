@@ -14,7 +14,6 @@ use strategy::scorer::{ScorerConfig, SignalScorer};
 use strategy::signal::{Direction, Signal};
 use tokio::sync::Mutex;
 
-/// Helper to setup a generator instance for testing.
 async fn setup_mock_generator() -> SignalGenerator {
     let config = ExchangeConfig {
         api_key: "test".to_string(),
@@ -42,7 +41,6 @@ async fn setup_mock_generator() -> SignalGenerator {
     SignalGenerator::new(Arc::new(client), inventory, fees, gen_config)
 }
 
-/// Helper to create mock AMM metadata for ETH/USDC.
 fn create_mock_metadata() -> PairMetadata {
     let addr = Address::ZERO;
     let base = Token::new(addr, 18, "ETH".to_string());

@@ -83,7 +83,6 @@ impl PnLEngine {
         self.trades.push(trade);
     }
 
-    /// Calculates cumulative PnL over time for charting.
     pub fn cumulative_pnl(&self) -> Vec<(DateTime<Utc>, Decimal)> {
         let mut sorted_trades = self.trades.clone();
         sorted_trades.sort_by_key(|t| t.timestamp);
@@ -98,7 +97,6 @@ impl PnLEngine {
             .collect()
     }
 
-    /// Exports an interactive Plotly.js chart as an HTML file.
     pub fn export_plotly_html(&self, filepath: &str) -> Result<(), Box<dyn Error>> {
         let data = self.cumulative_pnl();
         let x_values: Vec<String> = data.iter().map(|(ts, _)| ts.to_rfc3339()).collect();

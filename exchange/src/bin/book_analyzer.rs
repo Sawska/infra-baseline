@@ -9,10 +9,8 @@ use rust_decimal::prelude::*;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Trading pair (e.g. ETH/USDT)
     symbol: String,
 
-    /// Depth limit for the API call
     #[arg(short, long, default_value_t = 20)]
     depth: u32,
 }

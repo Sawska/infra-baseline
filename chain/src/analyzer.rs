@@ -8,7 +8,6 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 sol! {
-    /// Interface for standard ERC-20 token interactions.
     #[derive(Debug, PartialEq, Serialize)]
     interface IERC20 {
         event Transfer(address indexed from, address indexed to, uint256 value);
@@ -16,29 +15,24 @@ sol! {
         function decimals() external view returns (uint8);
     }
 
-    /// Interface for Uniswap V3 Router interactions.
     #[derive(Debug, PartialEq, Serialize)]
     interface IUniswapV3Router {
         function multicall(bytes[] calldata data) external;
     }
 
-    /// Interface for Uniswap V2 Router interactions.
     #[derive(Debug, PartialEq, Serialize)]
     interface IUniswapV2Router {
         function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) external;
         function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] calldata path, address to, uint256 deadline) external;
     }
 
-    /// Standard Uniswap V2 Swap event.
     #[derive(Serialize)]
     event Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to);
 
-    /// Standard Uniswap V2 Sync event.
     #[derive(Serialize)]
     event Sync(uint112 reserve0, uint112 reserve1);
 }
 
-/// Data structure representing the final analysis report.
 #[derive(Serialize, Debug)]
 pub struct AnalysisReport {
     pub hash: B256,
@@ -51,14 +45,12 @@ pub struct AnalysisReport {
     pub events: Vec<DecodedEvent>,
 }
 
-/// Gas usage details for the report.
 #[derive(Serialize, Debug)]
 pub struct GasReport {
     pub gas_used: u64,
     pub fee_eth: String,
 }
 
-/// Decoded event information for the report.
 #[derive(Serialize, Debug)]
 pub enum DecodedEvent {
     Transfer {
@@ -83,7 +75,6 @@ pub enum DecodedEvent {
     },
 }
 
-/// The core analyzer engine.
 pub struct Analyzer {
     client: ChainClient,
     token_cache: HashMap<AlloyAddress, (String, u8)>,
@@ -149,7 +140,6 @@ impl Analyzer {
         (symbol, decimals)
     }
 
-    /// Analyzes a transaction hash and returns a structured report.
     pub async fn analyze(&mut self, tx_hash: B256) -> Result<AnalysisReport> {
         let (tx_res, receipt_res) = tokio::join!(
             self.client.get_transaction(tx_hash),

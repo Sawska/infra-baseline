@@ -12,7 +12,6 @@ use std::env;
 use std::fs;
 
 sol! {
-    /// Interface for standard ERC-20 token interactions.
     #[derive(Debug, PartialEq, Serialize)]
     interface IERC20 {
         event Transfer(address indexed from, address indexed to, uint256 value);
@@ -20,29 +19,24 @@ sol! {
         function decimals() external view returns (uint8);
     }
 
-    /// Interface for Uniswap V3 Router interactions.
     #[derive(Debug, PartialEq, Serialize)]
     interface IUniswapV3Router {
         function multicall(bytes[] calldata data) external;
     }
 
-    /// Interface for Uniswap V2 Router interactions.
     #[derive(Debug, PartialEq, Serialize)]
     interface IUniswapV2Router {
         function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) external;
         function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] calldata path, address to, uint256 deadline) external;
     }
 
-    /// Standard Uniswap V2 Swap event.
     #[derive(Serialize)]
     event Swap(address indexed sender, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out, address indexed to);
 
-    /// Standard Uniswap V2 Sync event.
     #[derive(Serialize)]
     event Sync(uint112 reserve0, uint112 reserve1);
 }
 
-/// Data structure representing the final analysis report.
 #[derive(Serialize, Debug)]
 struct AnalysisReport {
     hash: B256,
@@ -55,14 +49,12 @@ struct AnalysisReport {
     events: Vec<DecodedEvent>,
 }
 
-/// Gas usage details for the report.
 #[derive(Serialize, Debug)]
 struct GasReport {
     gas_used: u64,
     fee_eth: String,
 }
 
-/// Decoded event information for the report.
 #[derive(Serialize, Debug)]
 enum DecodedEvent {
     Transfer {
@@ -87,23 +79,18 @@ enum DecodedEvent {
     },
 }
 
-/// Command-line arguments for the analyzer.
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Ethereum Transaction Analyzer")]
 struct Args {
-    /// The transaction hash to analyze.
     tx_hash: String,
 
-    /// Optional RPC URL override.
     #[arg(long)]
     rpc: Option<String>,
 
-    /// Output report in JSON format (and save to report.json).
     #[arg(long, default_value_t = false)]
     json: bool,
 }
 
-/// The core analyzer engine.
 struct Analyzer {
     client: ChainClient,
     token_cache: HashMap<AlloyAddress, (String, u8)>,

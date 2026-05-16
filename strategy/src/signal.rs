@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
-/// Represents the direction of the arbitrage trade between CEX and DEX.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
@@ -10,7 +9,6 @@ pub enum Direction {
     BuyDexSellCex,
 }
 
-/// A validated arbitrage opportunity ready for execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Signal {
     pub signal_id: String,
@@ -35,22 +33,6 @@ pub struct Signal {
 }
 
 impl Signal {
-    /// Creates a new Signal instance with a unique ID and current timestamp.
-    ///
-    /// # Arguments
-    /// * `pair` - The trading pair (e.g., "BTC/USDT")
-    /// * `direction` - The trade direction
-    /// * `cex_price` - Current price on the CEX
-    /// * `dex_price` - Current price on the DEX
-    /// * `spread_bps` - Calculated spread in basis points
-    /// * `size` - Opportunity size
-    /// * `expected_gross_pnl` - PnL before fees
-    /// * `expected_fees` - Estimated execution fees
-    /// * `expected_net_pnl` - PnL after fees
-    /// * `score` - Calculated strategy score
-    /// * `expiry` - Timestamp when this signal becomes invalid
-    /// * `inventory_ok` - Whether required inventory is available
-    /// * `within_limits` - Whether the trade respects risk limits
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         pair: String,
@@ -94,7 +76,6 @@ impl Signal {
         }
     }
 
-    /// Validates if the signal is still actionable.
     pub fn is_valid(&self) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -108,7 +89,6 @@ impl Signal {
             && self.score > 0.0
     }
 
-    /// Returns the age of the signal in seconds.
     pub fn age_seconds(&self) -> f64 {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)

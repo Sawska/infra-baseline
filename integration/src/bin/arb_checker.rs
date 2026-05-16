@@ -17,7 +17,6 @@ use std::sync::Arc;
 const WETH_ADDR: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const USDT_ADDR: &str = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
-/// Appends an arbitrage opportunity result to a CSV file.
 fn log_opportunity_to_csv(opp: &ArbOpportunity, filepath: &str) -> Result<()> {
     let file_exists = std::path::Path::new(filepath).exists();
     let mut file = OpenOptions::new()

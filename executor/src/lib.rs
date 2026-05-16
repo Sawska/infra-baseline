@@ -1,4 +1,5 @@
 pub mod engine;
+pub mod gas_oracle;
 pub mod kill_switch;
 pub mod metrics;
 pub mod monitoring;

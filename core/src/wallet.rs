@@ -21,14 +21,12 @@ impl WalletManager {
         Ok(Self { signer })
     }
 
-    /// Generate a new random wallet. Returns the manager and the hex private key.
     pub fn generate() -> (Self, String) {
         let signer = PrivateKeySigner::random();
         let pkey_hex = hex::encode(signer.to_bytes());
         (Self { signer }, pkey_hex)
     }
 
-    /// Load from an encrypted JSON keyfile (Geth/Clef format).
     pub fn from_keyfile<P: AsRef<Path>>(path: P, password: &str) -> Result<Self, ArbError> {
         let signer = PrivateKeySigner::decrypt_keystore(path, password)
             .map_err(|e| ArbError::CryptoError(e.to_string()))?;
@@ -36,7 +34,6 @@ impl WalletManager {
         Ok(Self { signer })
     }
 
-    ///  Save to an encrypted JSON keyfile
     pub fn to_keyfile<P: AsRef<Path>>(&self, path: P, password: &str) -> Result<(), ArbError> {
         let path_ref = path.as_ref();
         let parent = path_ref.parent().unwrap_or_else(|| Path::new("."));
@@ -63,7 +60,6 @@ impl WalletManager {
         Address::from_string(&self.signer.address().to_string()).unwrap()
     }
 
-    /// Sign an arbitrary message (EIP-191).
     pub fn sign_message(&self, message: &[u8]) -> Result<Signature, ArbError> {
         if message.is_empty() {
             return Err(ArbError::EmptyMessage);
@@ -73,8 +69,6 @@ impl WalletManager {
             .map_err(|e| ArbError::CryptoError(e.to_string()))
     }
 
-    /// Sign EIP-712 typed data.
-    /// In Rust, we use the SolStruct trait for compile-time safety.
     pub fn sign_typed_data<T: SolStruct>(
         &self,
         data: &T,
@@ -86,7 +80,6 @@ impl WalletManager {
             .map_err(|e| ArbError::CryptoError(e.to_string()))
     }
 
-    /// Sign a transaction request.
     pub fn sign_transaction(&self, tx: &TransactionRequest) -> Result<Signature, ArbError> {
         let hash = tx.signing_hash();
         self.signer

@@ -7,6 +7,7 @@ use arb_core::types::{Address, TokenAmount, TransactionRequest};
 use exchange::client::{ExchangeClient, ExchangeType};
 use exchange::config::ExchangeConfig;
 use executor::engine::{Executor, ExecutorConfig, ExecutorState};
+use executor::gas_oracle::{GasOracle, gas_units as gas_units_table, safety_check_with_gas};
 use executor::kill_switch::AutoKillSwitch;
 use executor::metrics::gather_metrics;
 use executor::monitoring;
@@ -52,6 +53,7 @@ pub struct PerPairConfig {
     pub min_spread_bps: f64,
     pub min_profit_usd: f64,
     pub fee_structure: FeeStructure,
+    pub gas_units: u64,
 }
 
 impl PerPairConfig {
@@ -65,6 +67,7 @@ impl PerPairConfig {
                 dex_swap_bps: 1.0,
                 gas_cost_usd: 0.07,
             },
+            gas_units: gas_units_table::TWO_HOP_V3,
         }
     }
 
@@ -78,6 +81,7 @@ impl PerPairConfig {
                 dex_swap_bps: 5.0,
                 gas_cost_usd: 0.02,
             },
+            gas_units: gas_units_table::UNISWAP_V3_SWAP,
         }
     }
 }
@@ -106,6 +110,7 @@ struct ArbBot {
     error_timestamps: VecDeque<Instant>,
     daily_trades: Vec<f64>,
     pair_configs: HashMap<String, PerPairConfig>,
+    gas_oracle: GasOracle,
 }
 
 impl ArbBot {
@@ -236,6 +241,7 @@ impl ArbBot {
             error_timestamps: VecDeque::new(),
             daily_trades: Vec::new(),
             pair_configs: config.pair_configs,
+            gas_oracle: GasOracle::new(0.1, 0.1, 3_000.0),
         };
 
         bot.sync_binance_balances().await?;
@@ -333,7 +339,6 @@ impl ArbBot {
         }
     }
 
-    /// Generates an HTML file with an ECharts PnL graph
     fn generate_pnl_chart_html(&self) {
         let mut file = match fs::File::open(PNL_HISTORY_FILE) {
             Ok(f) => f,
@@ -674,12 +679,13 @@ impl ArbBot {
             if last_health_check.elapsed() >= Duration::from_secs(60) {
                 self.save_pnl_snapshot();
 
+                self.update_gas_oracle().await;
+
                 if let Err(e) = self.verify_balances().await {
                     error!("Integrity check failed: {}. Pausing trading for safety.", e);
                     self.trading_active = false;
                 }
 
-                // Push status dashboard data to Node.js Bridge
                 let wins = self.daily_trades.iter().filter(|&&p| p > 0.0).count();
                 let losses = self.daily_trades.len() - wins;
                 let initial_capital = self.risk_manager.initial_capital;
@@ -852,6 +858,22 @@ impl ArbBot {
                 return Ok(());
             }
 
+            {
+                let pair_cfg = self
+                    .pair_configs
+                    .get(&best_signal.pair)
+                    .cloned()
+                    .unwrap_or_else(PerPairConfig::pepe_default);
+                let gross_profit =
+                    best_signal.expected_net_pnl + pair_cfg.fee_structure.gas_cost_usd;
+                if let Err(reason) =
+                    safety_check_with_gas(gross_profit, pair_cfg.gas_units, &self.gas_oracle)
+                {
+                    warn!("GAS CHECK BLOCKED: {} | {}", best_signal.pair, reason);
+                    return Ok(());
+                }
+            }
+
             info!(
                 "Executing Signal: {} | Spread: {:.1} bps | Est PnL: ${:.2}",
                 best_signal.pair, best_signal.spread_bps, best_signal.expected_net_pnl
@@ -937,7 +959,28 @@ impl ArbBot {
         Ok(())
     }
 
-    /// Checking actual venues and ours (Watchdog)
+    async fn update_gas_oracle(&mut self) {
+        match self.chain_client.get_gas_price().await {
+            Ok(gas_price) => {
+                let base_fee_gwei = gas_price.base_fee as f64 / 1e9;
+                self.gas_oracle.update(base_fee_gwei);
+            }
+            Err(e) => {
+                warn!("GasOracle: failed to fetch base fee, EWM unchanged: {}", e);
+            }
+        }
+
+        if let Some(eth_price) = self.generator.last_price("WETH/USDT") {
+            self.gas_oracle.set_eth_price(eth_price);
+        }
+
+        info!(
+            "GasOracle | base fee EWM: {:.4} gwei | pessimistic (+1.5σ): {:.4} gwei",
+            self.gas_oracle.current_gwei(),
+            self.gas_oracle.pessimistic_estimate(),
+        );
+    }
+
     async fn verify_balances(&mut self) -> Result<()> {
         info!("Watchdog: Full balance reconciliation (CEX & DEX)...");
 

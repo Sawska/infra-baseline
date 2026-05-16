@@ -17,9 +17,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Check current inventory skew
     Check,
-    /// Generate a rebalance plan for an asset
     Plan { asset: String },
 }
 

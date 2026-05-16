@@ -20,17 +20,14 @@ use strategy::signal::{Direction, Signal};
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep, timeout};
 
-/// Binance rules for ETH/USDC
 const MIN_NOTIONAL: f64 = 5.0;
 const LOT_SIZE_STEP: f64 = 1.0;
 const PRICE_TICK: f64 = 0.00000001;
 
-/// Round quantity down to nearest lot size step
 pub fn round_quantity(qty: f64, step: f64) -> f64 {
     (qty / step).floor() * step
 }
 
-/// Round price to nearest tick (can round up or down depending on Rust's f64 round)
 pub fn round_price(price: f64, tick: f64) -> f64 {
     (price / tick).round() * tick
 }

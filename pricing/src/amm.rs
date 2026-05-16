@@ -636,7 +636,6 @@ impl UniswapV3Pool {
         }
     }
 
-    /// TickMath: get sqrt ratio at tick.
     fn get_sqrt_ratio_at_tick(&self, tick: i32) -> Result<U256> {
         let ratio = 1.0001f64.powi(tick).sqrt();
         let q96 = 2.0f64.powi(96);
@@ -651,7 +650,6 @@ impl UniswapV3Pool {
         Ok(tick)
     }
 
-    /// Fetch V3 pool data from on-chain.
     pub async fn from_chain(
         address: Address,
         client: &ChainClient,

@@ -73,7 +73,6 @@ impl CircuitBreaker {
         }
     }
 
-    /// Spawns a thread to send the webhook so the main trading loop isn't blocked.
     fn send_alert(&self, url: String, timestamp: f64, failure_count: usize) {
         let payload = json!({
             "alert_type": "CIRCUIT_BREAKER_TRIPPED",

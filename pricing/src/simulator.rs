@@ -56,7 +56,6 @@ pub struct ForkSimulator {
 }
 
 impl ForkSimulator {
-    /// fork_url: Local Anvil/Hardhat fork RPC
     pub fn new(fork_url: &str) -> Result<Self> {
         let url = Url::parse(fork_url)?;
         let provider = ProviderBuilder::new().connect_http(url);
@@ -65,8 +64,6 @@ impl ForkSimulator {
         })
     }
 
-    /// Simulate a swap and return detailed results.
-    /// Uses eth_call to get output and eth_estimateGas for gas usage.
     pub async fn simulate_pool_swap(
         &self,
         pool: &Pool,
@@ -170,7 +167,6 @@ impl ForkSimulator {
         }
     }
 
-    /// Simulate a multi-hop route.
     pub async fn simulate_route(
         &self,
         router_address: Address,
@@ -223,8 +219,6 @@ impl ForkSimulator {
         }
     }
 
-    /// Compare our AMM math vs actual fork simulation.
-    /// Useful for validation.
     pub async fn compare_simulation_vs_calculation(
         &self,
         pool: &Pool,
@@ -275,7 +269,6 @@ impl ForkSimulator {
         Ok((U256::from(decoded.reserve0), U256::from(decoded.reserve1)))
     }
 
-    /// Calls the official Uniswap V2 Router math logic on-chain
     pub async fn call_uniswap_v2_get_amount_out(
         &self,
         router_address: Address,

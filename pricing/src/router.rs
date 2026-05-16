@@ -6,7 +6,6 @@ use anyhow::{Result, anyhow};
 use arb_core::Address;
 use std::collections::{HashMap, HashSet};
 
-/// Represents a swap route through one or more pools.
 #[derive(Clone, Debug)]
 pub struct Route {
     pub pools: Vec<Pool>,
@@ -22,7 +21,6 @@ impl Route {
         self.pools.len()
     }
 
-    /// Simulate full route, return final output.
     pub fn get_output(&self, amount_in: U256) -> Result<U256> {
         let mut current_amount = amount_in;
         for (i, pool) in self.pools.iter().enumerate() {
@@ -32,7 +30,6 @@ impl Route {
         Ok(current_amount)
     }
 
-    /// Return amount at each step: [input, after_hop1, after_hop2, ...]
     pub fn get_intermediate_amounts(&self, amount_in: U256) -> Result<Vec<U256>> {
         let mut amounts = vec![amount_in];
         let mut current_amount = amount_in;
@@ -44,13 +41,11 @@ impl Route {
         Ok(amounts)
     }
 
-    /// Estimate gas: ~150k base + ~100k per hop.
     pub fn estimate_gas(&self) -> u64 {
         150_000 + (100_000 * self.pools.len() as u64)
     }
 }
 
-/// Detailed breakdown of a route's performance
 #[derive(Debug, Clone)]
 pub struct RouteAnalysis {
     pub route: Route,
@@ -61,7 +56,6 @@ pub struct RouteAnalysis {
     pub net_output: U256,
 }
 
-/// Finds optimal routes between tokens.
 pub struct RouteFinder {
     pub pools: Vec<Pool>,
     graph: HashMap<Address, Vec<(Pool, Token)>>,
@@ -73,7 +67,6 @@ impl RouteFinder {
         Self { pools, graph }
     }
 
-    /// Build adjacency graph: token -> [(pool, other_token), ...]
     fn build_graph(pools: &[Pool]) -> HashMap<Address, Vec<(Pool, Token)>> {
         let mut graph = HashMap::new();
         for pool in pools {
@@ -92,7 +85,6 @@ impl RouteFinder {
         graph
     }
 
-    /// Find all possible routes up to max_hops using DFS.
     pub fn find_all_routes(
         &self,
         token_in: &Token,
@@ -165,8 +157,6 @@ impl RouteFinder {
         }
     }
 
-    /// Find route that maximizes NET output (after gas).
-    /// Returns (best_route, net_output).
     pub fn find_best_route(
         &self,
         token_in: &Token,
@@ -185,7 +175,6 @@ impl RouteFinder {
             .ok_or_else(|| anyhow!("No route found"))
     }
 
-    /// Compare all routes with detailed breakdown.
     pub fn compare_routes(
         &self,
         token_in: &Token,
@@ -225,8 +214,6 @@ impl RouteFinder {
         Ok(results)
     }
 
-    /// Helper to estimate gas cost in terms of the output token.
-    /// This is a simplified heuristic: it looks for a direct WETH pair in the known pools.
     fn convert_eth_to_token_cost(&self, gas_cost_eth: U256, token_out: &Token) -> Option<U256> {
         if token_out.symbol == "WETH" || token_out.symbol == "ETH" {
             return Some(gas_cost_eth);

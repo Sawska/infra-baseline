@@ -26,9 +26,7 @@ impl Balance {
 
 #[derive(Debug, Clone)]
 pub struct InventoryTracker {
-    /// Tracks which wallet address this tracker is associated with
     pub wallet_address: Option<Address>,
-    /// Venue -> Asset Symbol -> Balance
     pub balances: HashMap<Venue, HashMap<String, Balance>>,
 }
 
@@ -65,8 +63,6 @@ impl InventoryTracker {
         }
     }
 
-    /// Update from Wallet (DEX) using your core::TokenAmount model
-    /// This handles the conversion from U256 to Decimal automatically
     pub fn update_from_wallet(&mut self, wallet_balances: Vec<TokenAmount>) {
         if let Some(venue_map) = self.balances.get_mut(&Venue::Wallet) {
             venue_map.clear();
@@ -86,7 +82,6 @@ impl InventoryTracker {
         }
     }
 
-    /// Full portfolio snapshot
     pub fn snapshot(&self) -> serde_json::Value {
         let mut totals: HashMap<String, Decimal> = HashMap::new();
 
@@ -121,7 +116,6 @@ impl InventoryTracker {
             .unwrap_or(Decimal::ZERO)
     }
 
-    /// Pre-flight check before executing an arbitrage trade
     pub fn can_execute(
         &self,
         buy_venue: Venue,
@@ -155,7 +149,6 @@ impl InventoryTracker {
         })
     }
 
-    /// Record a trade to update local state immediately (optimistic update)
     #[allow(clippy::too_many_arguments)]
     pub fn record_trade(
         &mut self,
@@ -203,7 +196,6 @@ impl InventoryTracker {
         }
     }
 
-    /// Calculate skew across CEX and DEX for rebalancing
     pub fn skew(&self, asset: &str) -> serde_json::Value {
         let mut total = Decimal::ZERO;
         let mut venue_amounts = HashMap::new();

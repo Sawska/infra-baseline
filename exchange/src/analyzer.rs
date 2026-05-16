@@ -28,8 +28,6 @@ impl OrderBookAnalyzer {
         Self { orderbook }
     }
 
-    /// Simulate filling `qty` against the order book.
-    /// side: "buy" (walks asks) or "sell" (walks bids)
     pub fn walk_the_book(&self, side: &str, qty: Decimal) -> WalkResult {
         let levels = if side.to_lowercase() == "buy" {
             &self.orderbook.asks
@@ -92,7 +90,6 @@ impl OrderBookAnalyzer {
         }
     }
 
-    /// Total quantity available within `bps` basis points of best price.
     pub fn depth_at_bps(&self, side: &str, bps: Decimal) -> (Decimal, Decimal) {
         let levels = if side.to_lowercase() == "ask" {
             &self.orderbook.asks
@@ -126,7 +123,6 @@ impl OrderBookAnalyzer {
         (total_qty.normalize(), total_cost.normalize())
     }
 
-    /// Order book imbalance ratio [-1.0, +1.0]
     pub fn imbalance(&self, levels: usize) -> Decimal {
         let bid_vol: Decimal = self.orderbook.bids.iter().take(levels).map(|l| l.1).sum();
         let ask_vol: Decimal = self.orderbook.asks.iter().take(levels).map(|l| l.1).sum();
@@ -139,7 +135,6 @@ impl OrderBookAnalyzer {
         ((bid_vol - ask_vol) / total).round_dp(2)
     }
 
-    /// Effective spread for a round-trip of size `qty` in bps.
     pub fn effective_spread(&self, qty: Decimal) -> Decimal {
         let buy_walk = self.walk_the_book("buy", qty);
         let sell_walk = self.walk_the_book("sell", qty);

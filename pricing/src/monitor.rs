@@ -66,9 +66,6 @@ pub struct ParsedSwap {
 }
 
 impl ParsedSwap {
-    /// Calculate implied slippage tolerance.
-    /// Note: This returns 0.0 by default as calculating true slippage
-    /// requires the real-time spot price/reserves which aren't in the tx data.
     pub fn slippage_tolerance(&self) -> Decimal {
         Decimal::ZERO
     }
@@ -97,7 +94,6 @@ where
         Self { ws_url, callback }
     }
 
-    /// Start monitoring pending transactions.
     pub async fn start(&self) -> Result<()> {
         let ws = WsConnect::new(self.ws_url.clone());
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
@@ -142,8 +138,6 @@ where
         }
     }
 
-    /// Parse transaction to extract swap details.
-    /// Returns None if not a known swap type.
     pub fn parse_transaction(&self, tx: &Transaction) -> Option<ParsedSwap> {
         let input = &tx.input();
         if input.len() < 4 {

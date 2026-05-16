@@ -17,7 +17,6 @@ struct Message {
     text: Option<String>,
 }
 
-/// Simple Telegram alerting client to send status updates and remote command polling.
 pub struct TelegramAlert {
     chat_id: String,
     base_url: String,
@@ -29,7 +28,6 @@ impl TelegramAlert {
         Self { chat_id, base_url }
     }
 
-    /// Sends a message to the configured chat.
     pub async fn send(&self, message: &str, urgent: bool) {
         if self.chat_id.is_empty() {
             warn!("Chat ID missing, skipping alert.");
@@ -68,7 +66,6 @@ impl TelegramAlert {
         }
     }
 
-    /// Pushes the latest internal bot state to the Node.js bridge for the /status command
     pub async fn update_bot_state(&self, payload: serde_json::Value) {
         if self.chat_id.is_empty() {
             return;
@@ -94,7 +91,6 @@ impl TelegramAlert {
         }
     }
 
-    /// Polls for the latest message to see if a "/stop" command was sent.
     pub async fn check_for_stop_command(&self) -> bool {
         let url = format!("{}/getUpdates", self.base_url);
         let client = reqwest::Client::new();

@@ -14,8 +14,6 @@ use std::sync::Arc;
 const WETH_ADDR: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const USDT_ADDR: &str = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
-/// Helper to create a test exchange client.
-/// In CI, we often get empty order books from testnets.
 async fn get_test_client() -> ExchangeClient {
     let config = ExchangeConfig {
         api_key: "test_key".into(),
@@ -46,7 +44,6 @@ async fn get_test_client() -> ExchangeClient {
     }
 }
 
-/// A specialized helper for CI that prepares the ArbChecker.
 async fn get_checker_with_mock_support()
 -> Result<ArbChecker<impl Fn(pricing::monitor::MonitorEvent) -> std::future::Ready<()>>> {
     let fork_url =

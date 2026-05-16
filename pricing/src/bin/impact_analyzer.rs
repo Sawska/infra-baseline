@@ -13,30 +13,23 @@ use std::env;
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Price Impact Analyzer")]
 struct Args {
-    /// Pair address
     pair_address: String,
 
-    /// Token In Symbol or Address (e.g., "USDC" or "0xA0b8...")
     #[arg(long)]
     token_in: String,
 
-    /// Comma separated list of amounts (in human readable format, e.g. 1000,2000)
     #[arg(long, value_delimiter = ',')]
     sizes: Vec<String>,
 
-    /// RPC URL
     #[arg(long)]
     rpc: Option<String>,
 
-    /// Start block for historical analysis (optional)
     #[arg(long)]
     start_block: Option<u64>,
 
-    /// End block for historical analysis (optional)
     #[arg(long)]
     end_block: Option<u64>,
 
-    /// Block step size for historical analysis
     #[arg(long, default_value_t = 100)]
     step: u64,
 }

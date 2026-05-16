@@ -4,7 +4,6 @@ use crate::telegram_alert::TelegramAlert;
 use log::warn;
 use std::sync::Arc;
 
-/// Automatic safety switch that shuts down the bot based on catastrophic conditions.
 pub struct AutoKillSwitch {
     pub triggered: bool,
     pub reason: Option<String>,
@@ -18,8 +17,6 @@ impl AutoKillSwitch {
         }
     }
 
-    /// Checks for critical conditions that should shut down the bot immediately.
-    /// Returns true if the bot was triggered (killed).
     pub async fn check(
         &mut self,
         risk_manager: &RiskManager,
@@ -88,7 +85,6 @@ impl AutoKillSwitch {
         false
     }
 
-    /// Explicitly triggers the kill switch with a reason.
     pub async fn trigger(&mut self, reason: &str, telegram: &Arc<TelegramAlert>) {
         if self.triggered {
             return;

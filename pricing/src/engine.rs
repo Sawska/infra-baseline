@@ -68,7 +68,6 @@ where
         })
     }
 
-    /// Load pool data from chain.
     pub async fn load_pools(&mut self, pool_addresses: Vec<Address>) -> Result<()> {
         for addr in pool_addresses {
             let pair = Pool::from_chain(addr, &self.client, None).await?;
@@ -80,7 +79,6 @@ where
         Ok(())
     }
 
-    /// Refresh single pool's reserves.
     pub async fn refresh_pool(&mut self, address: Address) -> Result<()> {
         if self.pools.contains_key(&address) {
             let new_pair = Pool::from_chain(address, &self.client, None).await?;
@@ -92,7 +90,6 @@ where
         Ok(())
     }
 
-    /// Get best quote for a swap, verifying with simulation.
     pub async fn get_quote(
         &self,
         token_in: &Token,
@@ -174,7 +171,6 @@ where
         opportunities
     }
 
-    /// Start the background mempool monitor.
     pub async fn start_monitor(&self) -> Result<()> {
         self.monitor.start().await
     }

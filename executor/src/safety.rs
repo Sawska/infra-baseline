@@ -3,7 +3,6 @@ pub const ABSOLUTE_MAX_DAILY_LOSS: f64 = 20.0;
 pub const ABSOLUTE_MIN_CAPITAL: f64 = 50.0;
 pub const ABSOLUTE_MAX_TRADES_PER_HOUR: u32 = 30;
 
-/// Final safety gate — runs AFTER all other checks.
 pub fn safety_check(
     trade_usd: f64,
     daily_loss: f64,

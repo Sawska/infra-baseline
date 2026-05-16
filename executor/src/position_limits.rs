@@ -1,32 +1,16 @@
 use serde::{Deserialize, Serialize};
 use strategy::signal::Signal;
 
-/// Hard limits that cannot be exceeded.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiskLimits {
-    /// Never trade more than this USD amount per trade
     pub max_trade_usd: f64,
-    /// Never trade more than this percentage of current capital per trade (0.0 - 1.0)
     pub max_trade_pct: f64,
-
-    /// Position limits
-    /// Never hold >$30 of any token (Not strictly enforced in check_pre_trade yet, requires inventory)
     pub max_position_per_token: f64,
-    /// Only one trade at a time
     pub max_open_positions: usize,
-
-    /// Loss limits
-    /// Stop trading after this amount of daily loss
     pub max_daily_loss: f64,
-    /// Stop trading if drawdown from peak capital exceeds this percentage (0.0 - 1.0)
     pub max_drawdown_pct: f64,
-    /// Max allowable loss per single trade (e.g. max acceptable gas loss on revert)
     pub max_loss_per_trade: f64,
-
-    /// Frequency limits
-    /// Prevent runaway loops (max trades per hour)
     pub max_trades_per_hour: usize,
-    /// Stop after N losses in a row
     pub consecutive_loss_limit: usize,
 }
 
@@ -46,7 +30,6 @@ impl Default for RiskLimits {
     }
 }
 
-/// Enforce risk limits before every trade and track state.
 pub struct RiskManager {
     pub limits: RiskLimits,
     pub(crate) peak_capital: f64,
@@ -70,8 +53,6 @@ impl RiskManager {
         }
     }
 
-    /// Check all risk limits before allowing a trade.
-    /// Returns (allowed, reason).
     pub fn check_pre_trade(&self, signal: &Signal) -> (bool, String) {
         let trade_value = signal.size * signal.cex_price;
 
@@ -143,7 +124,6 @@ impl RiskManager {
         (true, "OK".to_string())
     }
 
-    /// Update state after a trade execution.
     pub fn record_trade(&mut self, pnl: f64) {
         self.daily_pnl += pnl;
         self.current_capital += pnl;
@@ -179,7 +159,6 @@ impl RiskManager {
         );
     }
 
-    /// Call at start of each trading day.
     pub fn reset_daily(&mut self) {
         self.daily_pnl = 0.0;
         self.trades_this_hour = 0;

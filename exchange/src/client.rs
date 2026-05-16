@@ -14,8 +14,6 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// A smart, weight-aware token bucket rate limiter.
-/// It refills tokens based on time and allows bursts for execution.
 pub struct RateLimiter {
     capacity: f64,
     pub tokens: Arc<Mutex<f64>>,
@@ -24,8 +22,6 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
-    /// Creates a new limiter.
-    /// `max_weight_per_minute` is the exchange's stated limit (e.g., 1200 for Binance).
     pub fn new(max_weight_per_minute: u64) -> Self {
         let capacity = max_weight_per_minute as f64;
         Self {
@@ -36,15 +32,12 @@ impl RateLimiter {
         }
     }
 
-    /// Explicitly updates the bucket based on exchange response headers.
-    /// This prevents our local state from drifting away from the exchange's server-side state.
     pub async fn update_from_headers(&self, used_weight: f64) {
         let mut tokens = self.tokens.lock().await;
         let remaining = (self.capacity - used_weight).max(0.0);
         *tokens = remaining;
     }
 
-    /// Waits until enough weight capacity is available.
     pub async fn wait(&self, weight: u32) {
         let weight_f = weight as f64;
         loop {
@@ -189,7 +182,6 @@ impl ExchangeClient {
         Ok(exchange)
     }
 
-    /// Fetch weight for specific operations to avoid hardcoding everywhere
     fn get_weight(&self, endpoint: &str, priority: RequestPriority) -> u32 {
         match (self.exchange_type, priority) {
             (ExchangeType::Binance, RequestPriority::High) => 1,

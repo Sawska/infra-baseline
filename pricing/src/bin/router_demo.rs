@@ -11,23 +11,18 @@ use std::env;
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Router Demo")]
 struct Args {
-    /// List of pool addresses to load (comma separated)
     #[arg(long, value_delimiter = ',', required = true)]
     pools: Vec<String>,
 
-    /// Token In Symbol (e.g. USDC)
     #[arg(long)]
     token_in: String,
 
-    /// Token Out Symbol (e.g. DAI)
     #[arg(long)]
     token_out: String,
 
-    /// Amount In (e.g. 1000)
     #[arg(long)]
     amount: String,
 
-    /// RPC URL
     #[arg(long)]
     rpc: Option<String>,
 }

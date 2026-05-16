@@ -3,7 +3,6 @@ use alloy_primitives::{B256, Keccak256};
 use serde::Serialize;
 use serde_json::ser::Formatter;
 
-/// A custom formatter to ensure no whitespace in JSON
 #[derive(Clone, Debug)]
 struct CanonicalFormatter;
 

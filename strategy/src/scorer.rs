@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use tokio::sync::Mutex;
 
-/// Configuration for the opportunity scoring logic.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScorerConfig {
     pub spread_weight: f64,
@@ -30,7 +29,6 @@ impl Default for ScorerConfig {
 
 pub struct SignalScorer {
     config: ScorerConfig,
-    /// Stores the last 100 trade results: (pair, success)
     recent_results: VecDeque<(String, bool)>,
 }
 
@@ -42,7 +40,6 @@ impl SignalScorer {
         }
     }
 
-    /// Calculates a score from 0 to 100 for a given signal.
     pub async fn score(&self, signal: &Signal, inventory: &Mutex<InventoryTracker>) -> f64 {
         let inventory_guard = inventory.lock().await;
         let spread_score = self.score_spread(signal.spread_bps);
@@ -100,7 +97,6 @@ impl SignalScorer {
         (successes as f64 / pair_results.len() as f64) * 100.0
     }
 
-    /// Records the outcome of an execution attempt.
     pub fn record_result(&mut self, pair: String, success: bool) {
         if self.recent_results.len() >= 100 {
             self.recent_results.pop_front();
@@ -108,7 +104,6 @@ impl SignalScorer {
         self.recent_results.push_back((pair, success));
     }
 
-    /// Applies time-based decay to a score as the signal approaches expiry.
     pub fn apply_decay(&self, signal: &Signal) -> f64 {
         let age = signal.age_seconds();
         let ttl = signal.expiry - signal.timestamp;

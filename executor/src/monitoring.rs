@@ -6,10 +6,6 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
-/// Configures logging to match Python specs:
-/// 1. Console + File output
-/// 2. Daily log files (logs/bot_YYYYMMDD.log)
-/// 3. Specific format: timestamp | level | message
 pub fn setup_logger() -> Result<()> {
     if !Path::new("logs").exists() {
         fs::create_dir("logs")?;
@@ -35,8 +31,6 @@ pub fn setup_logger() -> Result<()> {
     Ok(())
 }
 
-/// Metrics that must be healthy for trading.
-/// Checks critical components like connectivity, capital, and pnl.
 #[derive(Debug, Serialize)]
 pub struct BotHealth {
     pub is_running: bool,
@@ -60,8 +54,6 @@ impl BotHealth {
     }
 }
 
-/// Structured logging for executed trades.
-/// Used for parsing logs later to analyze strategy performance.
 pub fn log_trade(pair: &str, direction: &str, size: f64, spread_bps: f64, pnl: f64, state: &str) {
     info!(
         "TRADE | pair={} | dir={} | size={:.4} | spread={:.1}bps | pnl=${:.2} | state={}",
@@ -69,12 +61,10 @@ pub fn log_trade(pair: &str, direction: &str, size: f64, spread_bps: f64, pnl: f
     );
 }
 
-/// Structured logging for errors with context.
 pub fn log_error(context: &str, error: &str) {
     error!("ERROR | ctx={} | msg={}", context, error);
 }
 
-/// Helper to calculate age of a timestamp
 pub fn seconds_since(instant: Option<Instant>) -> Option<u64> {
     instant.map(|t| t.elapsed().as_secs())
 }

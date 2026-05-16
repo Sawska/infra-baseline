@@ -12,7 +12,6 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
-/// Configuration for the Signal Generator
 #[derive(Debug, Clone)]
 pub struct GeneratorConfig {
     pub min_spread_bps: f64,
@@ -34,14 +33,12 @@ impl Default for GeneratorConfig {
     }
 }
 
-/// Metadata required to link a trading pair to on-chain AMM pools
 pub struct PairMetadata {
     pub pool: Pool,
     pub base_token: Token,
     pub quote_token: Token,
 }
 
-/// Container for price data across venues
 #[derive(Debug, Clone)]
 struct PriceData {
     cex_bid: f64,
@@ -50,7 +47,6 @@ struct PriceData {
     dex_sell: f64,
 }
 
-/// Wrapper to implement Ord for Signal based on Net PnL
 #[derive(Debug)]
 struct PrioritizedSignal(Signal);
 
@@ -79,10 +75,10 @@ pub struct SignalGenerator {
     pub inventory: Arc<Mutex<InventoryTracker>>,
     fees: FeeStructure,
     pub config: GeneratorConfig,
-    /// Maps pair strings (e.g., "ETH/USDT") to their AMM pool metadata
     pair_metadata: HashMap<String, PairMetadata>,
     last_signal_time: HashMap<String, f64>,
-    /// Queue for signals sorted by priority (Net PnL)
+
+    last_prices: HashMap<String, f64>,
     signal_queue: BinaryHeap<PrioritizedSignal>,
 }
 
@@ -100,33 +96,33 @@ impl SignalGenerator {
             config,
             pair_metadata: HashMap::new(),
             last_signal_time: HashMap::new(),
+            last_prices: HashMap::new(),
             signal_queue: BinaryHeap::new(),
         }
     }
 
-    /// Registers a pool for a specific trading pair.
+    pub fn last_price(&self, pair: &str) -> Option<f64> {
+        self.last_prices.get(pair).cloned()
+    }
+
     pub fn register_pair(&mut self, pair: String, metadata: PairMetadata) {
         self.pair_metadata.insert(pair, metadata);
     }
 
-    /// Evaluates a pair and, if a valid signal is generated, adds it to the priority queue.
     pub async fn queue_candidate(&mut self, pair: &str, size: f64) {
         if let Some(signal) = self.generate(pair, size).await {
             self.signal_queue.push(PrioritizedSignal(signal));
         }
     }
 
-    /// Returns the highest priority (highest PnL) signal from the queue.
     pub fn pop_top_signal(&mut self) -> Option<Signal> {
         self.signal_queue.pop().map(|wrapper| wrapper.0)
     }
 
-    /// Clears the current signal queue.
     pub fn clear_queue(&mut self) {
         self.signal_queue.clear();
     }
 
-    /// Attempt to generate a signal for the given pair and size.
     pub async fn generate(&mut self, pair: &str, size: f64) -> Option<Signal> {
         let now = SignalGenerator::get_now();
 
@@ -222,14 +218,15 @@ impl SignalGenerator {
 
         Some(signal)
     }
-    /// Fetches the latest price data for both CEX and DEX.
-    async fn fetch_prices(&self, pair: &str, size: f64) -> Option<PriceData> {
+    async fn fetch_prices(&mut self, pair: &str, size: f64) -> Option<PriceData> {
         let metadata = self.pair_metadata.get(pair)?;
 
         let ob: OrderBook = self.exchange.fetch_order_book(pair, 5).await.ok()?;
         let cex_bid = ob.best_bid.0.to_f64()?;
         let cex_ask = ob.best_ask.0.to_f64()?;
 
+        let mid_price = (cex_bid + cex_ask) / 2.0;
+        self.last_prices.insert(pair.to_string(), mid_price);
         let size_u256 = self.f64_to_u256(size, metadata.base_token.decimals);
 
         let mut dex_sell = metadata
@@ -351,12 +348,10 @@ DEX {} available: {:.2} (need {:.2})",
         U256::from(raw)
     }
 
-    /// Dynamically updates the generator's core configuration (spreads, profit targets, etc.)
     pub fn update_config(&mut self, config: GeneratorConfig) {
         self.config = config;
     }
 
-    /// Dynamically updates the fee structure (used when switching between V3 fee tiers)
     pub fn set_fees(&mut self, fees: FeeStructure) {
         self.fees = fees;
     }
