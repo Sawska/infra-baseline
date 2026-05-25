@@ -9,6 +9,7 @@ arb-core = { path = "../core" }
 pricing = { path = "../pricing" }
 dotenvy.workspace = true
 anyhow.workspace = true
+base64 = "0.22"
 tokio.workspace = true
 reqwest = { version = "0.13.1", features = ["json"] }
 serde.workspace = true
@@ -18,6 +19,7 @@ colored.workspace = true
 rust_decimal = { version = "1.0", features = ["serde-float"] }
 chrono.workspace = true
 hmac = "0.12"
+openssl = "0.10"
 clap.workspace = true
 sha2 = "0.10"
 hex.workspace = true

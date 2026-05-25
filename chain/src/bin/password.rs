@@ -1,20 +1,18 @@
 use anyhow::{Context, Result};
-use arb_core::WalletManager;
-use dotenvy::dotenv;
-use std::env;
+use arb_core::{APP_CONFIG, WalletManager};
 use std::fs;
 use std::io::{self, Write};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv().ok();
-
     println!("--- Secure Keyfile Generator ---");
 
-    let _ = env::var("PRIVATE_KEY")
-        .context("PRIVATE_KEY not found in .env. Please ensure it is set before running this.")?;
+    let private_key =
+        APP_CONFIG.wallet.private_key.as_deref().context(
+            "PRIVATE_KEY not found in .env. Please ensure it is set before running this.",
+        )?;
 
-    let wallet = WalletManager::from_env("PRIVATE_KEY")?;
+    let wallet = WalletManager::from_private_key(private_key)?;
     println!("Found wallet for address: {}", wallet.address());
 
     print!("Enter a strong password to encrypt your keyfile: ");

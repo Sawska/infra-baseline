@@ -1,6 +1,6 @@
 use crate::client::ExchangeType;
 use anyhow::{Context, Result};
-use std::env;
+use arb_core::config::{APP_CONFIG, ExchangeVenueConfig};
 
 #[derive(Debug, Clone)]
 pub struct ExchangeConfig {
@@ -19,78 +19,108 @@ pub struct ExchangeConfig {
 
     pub api_key: String,
     pub secret: String,
+    pub passphrase: Option<String>,
     pub is_sandbox: bool,
     pub skip_connection_validation: bool,
 }
 
 impl ExchangeConfig {
     pub fn from_env(exchange_type: ExchangeType) -> Result<Self> {
-        dotenvy::dotenv().ok();
+        let app = &*APP_CONFIG;
+        let production = app.runtime.production;
+        let (venue, key_name, secret_name, passphrase_name) = venue_for(exchange_type, production);
 
-        let production = env::var("PRODUCTION")
-            .unwrap_or_else(|_| "false".to_string())
-            .to_lowercase()
-            == "true";
-
-        let (binance_http_url, binance_ws_url, cex_fee_bps) = if production {
-            (
-                "https://api.binance.com".to_string(),
-                "wss://stream.binance.com:9443/ws".to_string(),
-                10.0,
-            )
-        } else {
-            (
-                "https://testnet.binance.vision".to_string(),
-                "wss://testnet.binance.vision/ws".to_string(),
-                0.0,
-            )
-        };
-
-        let arbitrum_rpc_url = env::var("ARBITRUM_RPC_URL")
-            .unwrap_or_else(|_| "https://arb1.arbitrum.io/rpc".to_string());
-
-        let arbitrum_chain_id = 42161;
-
-        let pair = "ETH/USDC".to_string();
-
-        let weth_address = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string();
-        let usdc_address = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831".to_string();
-
-        let (key_name, secret_name) = match (exchange_type, production) {
-            (ExchangeType::Binance, true) => ("BINANCE_API_KEY", "BINANCE_SECRET"),
-            (ExchangeType::Binance, false) => ("BINANCE_TESTNET_API_KEY", "BINANCE_TESTNET_SECRET"),
-            (ExchangeType::Bybit, true) => ("BYBIT_API_KEY", "BYBIT_SECRET"),
-            (ExchangeType::Bybit, false) => ("BYBIT_TESTNET_API_KEY", "BYBIT_TESTNET_SECRET"),
-        };
-
-        let api_key = env::var(key_name).with_context(|| {
+        let api_key = venue.api_key.clone_value().with_context(|| {
             format!(
                 "Variable {} not found in .env (Production={})",
                 key_name, production
             )
         })?;
 
-        let secret = env::var(secret_name).with_context(|| {
+        let secret = venue.secret.clone_value().with_context(|| {
             format!(
                 "Variable {} not found in .env (Production={})",
                 secret_name, production
             )
         })?;
 
+        let passphrase = passphrase_name
+            .map(|name| {
+                venue.passphrase.clone_value().with_context(|| {
+                    format!(
+                        "Variable {} not found in .env (Production={})",
+                        name, production
+                    )
+                })
+            })
+            .transpose()?;
+
         Ok(Self {
             production,
-            binance_http_url,
-            binance_ws_url,
-            cex_fee_bps,
-            arbitrum_rpc_url,
-            arbitrum_chain_id,
-            pair,
-            weth_address,
-            usdc_address,
+            binance_http_url: venue.http_url.clone(),
+            binance_ws_url: venue.ws_url.clone(),
+            cex_fee_bps: app.exchange.fee_bps(production),
+            arbitrum_rpc_url: app.chain.arbitrum_rpc_url.clone(),
+            arbitrum_chain_id: app.chain.arbitrum_chain_id,
+            pair: app.exchange.default_pair.clone(),
+            weth_address: app.tokens.arbitrum_weth.clone(),
+            usdc_address: app.tokens.arbitrum_usdc.clone(),
             api_key,
             secret,
-            is_sandbox: false,
-            skip_connection_validation: false,
+            passphrase,
+            is_sandbox: app.exchange.is_sandbox || !production,
+            skip_connection_validation: app.exchange.skip_connection_validation,
         })
+    }
+}
+
+fn venue_for(
+    exchange_type: ExchangeType,
+    production: bool,
+) -> (
+    &'static ExchangeVenueConfig,
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+) {
+    let app = &*APP_CONFIG;
+    match (exchange_type, production) {
+        (ExchangeType::Binance, true) => (
+            &app.exchange.binance,
+            "BINANCE_API_KEY",
+            "BINANCE_SECRET",
+            None,
+        ),
+        (ExchangeType::Binance, false) => (
+            &app.exchange.binance_testnet,
+            "BINANCE_TESTNET_API_KEY",
+            "BINANCE_TESTNET_SECRET",
+            None,
+        ),
+        (ExchangeType::Bybit, true) => (&app.exchange.bybit, "BYBIT_API_KEY", "BYBIT_SECRET", None),
+        (ExchangeType::Bybit, false) => (
+            &app.exchange.bybit_testnet,
+            "BYBIT_TESTNET_API_KEY",
+            "BYBIT_TESTNET_SECRET",
+            None,
+        ),
+        (ExchangeType::Okx, _) => (
+            &app.exchange.okx,
+            "OKX_API_KEY",
+            "OKX_SECRET",
+            Some("OKX_PASSPHRASE"),
+        ),
+        (ExchangeType::Coinbase, _) => (
+            &app.exchange.coinbase,
+            "COINBASE_API_KEY",
+            "COINBASE_SECRET",
+            None,
+        ),
+        (ExchangeType::Kraken, _) => (
+            &app.exchange.kraken,
+            "KRAKEN_API_KEY",
+            "KRAKEN_SECRET",
+            None,
+        ),
     }
 }

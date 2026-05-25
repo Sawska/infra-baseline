@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use arb_chain::ChainClient;
-use arb_core::Address;
+use arb_core::{APP_CONFIG, Address};
 use exchange::client::{ExchangeClient, ExchangeType};
 use exchange::config::ExchangeConfig;
 use integration::checker::{ArbChecker, ArbOpportunity};
@@ -9,7 +9,6 @@ use inventory::tracker::{InventoryTracker, Venue};
 use pricing::amm::Token;
 use pricing::engine::PricingEngine;
 use rust_decimal_macros::dec;
-use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Arc;
@@ -50,10 +49,16 @@ fn log_opportunity_to_csv(opp: &ArbOpportunity, filepath: &str) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenvy::dotenv().ok();
-
-    let rpc_url = env::var("RPC_URL_LOCAL").context("RPC_URL not found in environment")?;
-    let wss_url = env::var("WS_URL").context("WSS_URL not found in environment")?;
+    let rpc_url = APP_CONFIG
+        .chain
+        .rpc_url_local
+        .clone()
+        .context("RPC_URL_LOCAL not found in environment")?;
+    let wss_url = APP_CONFIG
+        .chain
+        .ws_url
+        .clone()
+        .context("WS_URL not found in environment")?;
 
     let client = Arc::new(ChainClient::new(&rpc_url));
 

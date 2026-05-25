@@ -4,6 +4,7 @@ use csv::Writer;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
+use sqlx::{PgPool, Row};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -65,40 +66,214 @@ impl ArbRecord {
 }
 
 pub struct PnLEngine {
-    pub trades: Vec<ArbRecord>,
-}
-
-impl Default for PnLEngine {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub pool: PgPool,
 }
 
 impl PnLEngine {
-    pub fn new() -> Self {
-        Self { trades: Vec::new() }
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
     }
 
-    pub fn record(&mut self, trade: ArbRecord) {
-        self.trades.push(trade);
+    pub async fn record(&self, trade: ArbRecord) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO arb_trades (
+                id, timestamp, symbol,
+                buy_venue, buy_amount, buy_price, buy_fee, buy_fee_asset,
+                sell_venue, sell_amount, sell_price, sell_fee, sell_fee_asset,
+                gas_cost_usd, net_pnl, bps
+            ) VALUES (
+                $1, $2, $3,
+                $4, $5, $6, $7, $8,
+                $9, $10, $11, $12, $13,
+                $14, $15, $16
+            )
+            "#,
+        )
+        .bind(&trade.id)
+        .bind(trade.timestamp)
+        .bind(&trade.buy_leg.symbol)
+        .bind(format!("{:?}", trade.buy_leg.venue))
+        .bind(trade.buy_leg.amount)
+        .bind(trade.buy_leg.price)
+        .bind(trade.buy_leg.fee)
+        .bind(&trade.buy_leg.fee_asset)
+        .bind(format!("{:?}", trade.sell_leg.venue))
+        .bind(trade.sell_leg.amount)
+        .bind(trade.sell_leg.price)
+        .bind(trade.sell_leg.fee)
+        .bind(&trade.sell_leg.fee_asset)
+        .bind(trade.gas_cost_usd)
+        .bind(trade.net_pnl())
+        .bind(trade.net_pnl_bps())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 
-    pub fn cumulative_pnl(&self) -> Vec<(DateTime<Utc>, Decimal)> {
-        let mut sorted_trades = self.trades.clone();
-        sorted_trades.sort_by_key(|t| t.timestamp);
+    pub async fn fetch_all_trades(&self) -> Result<Vec<ArbRecord>, sqlx::Error> {
+        let rows = sqlx::query("SELECT * FROM arb_trades ORDER BY timestamp ASC")
+            .fetch_all(&self.pool)
+            .await?;
 
+        let mut trades = Vec::with_capacity(rows.len());
+
+        for row in rows {
+            let id: String = row.try_get("id")?;
+            let timestamp: DateTime<Utc> = row.try_get("timestamp")?;
+            let symbol: String = row.try_get("symbol")?;
+
+            let buy_venue_str: String = row.try_get("buy_venue")?;
+            let buy_venue = if buy_venue_str == "Cex" {
+                Venue::Cex
+            } else {
+                Venue::Wallet
+            };
+
+            let sell_venue_str: String = row.try_get("sell_venue")?;
+            let sell_venue = if sell_venue_str == "Cex" {
+                Venue::Cex
+            } else {
+                Venue::Wallet
+            };
+
+            let buy_leg = TradeLeg {
+                id: format!("{}-buy", id),
+                timestamp,
+                venue: buy_venue,
+                symbol: symbol.clone(),
+                side: Side::Buy,
+                amount: row.try_get("buy_amount")?,
+                price: row.try_get("buy_price")?,
+                fee: row.try_get("buy_fee")?,
+                fee_asset: row.try_get("buy_fee_asset")?,
+            };
+
+            let sell_leg = TradeLeg {
+                id: format!("{}-sell", id),
+                timestamp,
+                venue: sell_venue,
+                symbol,
+                side: Side::Sell,
+                amount: row.try_get("sell_amount")?,
+                price: row.try_get("sell_price")?,
+                fee: row.try_get("sell_fee")?,
+                fee_asset: row.try_get("sell_fee_asset")?,
+            };
+
+            trades.push(ArbRecord {
+                id,
+                timestamp,
+                buy_leg,
+                sell_leg,
+                gas_cost_usd: row.try_get("gas_cost_usd")?,
+            });
+        }
+
+        Ok(trades)
+    }
+
+    pub async fn cumulative_pnl(&self) -> Result<Vec<(DateTime<Utc>, Decimal)>, sqlx::Error> {
+        let trades = self.fetch_all_trades().await?;
         let mut cumulative = dec!(0);
-        sorted_trades
+        let series = trades
             .into_iter()
             .map(|t| {
                 cumulative += t.net_pnl();
                 (t.timestamp, cumulative)
             })
-            .collect()
+            .collect();
+        Ok(series)
     }
 
-    pub fn export_plotly_html(&self, filepath: &str) -> Result<(), Box<dyn Error>> {
-        let data = self.cumulative_pnl();
+    pub async fn summary(&self) -> Result<HashMap<String, String>, sqlx::Error> {
+        let trades = self.fetch_all_trades().await?;
+        let mut report = HashMap::new();
+
+        if trades.is_empty() {
+            return Ok(report);
+        }
+
+        let count = trades.len();
+        let pnls: Vec<Decimal> = trades.iter().map(|t| t.net_pnl()).collect();
+
+        let total_pnl: Decimal = pnls.iter().sum();
+        let total_fees: Decimal = trades.iter().map(|t| t.total_fees()).sum();
+        let total_notional: Decimal = trades.iter().map(|t| t.notional()).sum();
+
+        let wins = pnls.iter().filter(|&&p| p > dec!(0)).count();
+        let win_rate = (wins as f64 / count as f64) * 100.0;
+
+        let avg_pnl = total_pnl / Decimal::from(count);
+        let total_bps = trades.iter().map(|t| t.net_pnl_bps()).sum::<Decimal>();
+        let avg_bps = total_bps / Decimal::from(count);
+
+        let avg_f = avg_pnl.to_f64().unwrap_or(0.0);
+        let variance = pnls
+            .iter()
+            .map(|p| (p.to_f64().unwrap_or(0.0) - avg_f).powi(2))
+            .sum::<f64>()
+            / count as f64;
+        let std_dev = variance.sqrt();
+        let sharpe = if std_dev > 0.0 { avg_f / std_dev } else { 0.0 };
+
+        report.insert("total_trades".into(), count.to_string());
+        report.insert("win_rate".into(), format!("{:.1}%", win_rate));
+        report.insert("total_pnl_usd".into(), total_pnl.round_dp(2).to_string());
+        report.insert("total_fees_usd".into(), total_fees.round_dp(2).to_string());
+        report.insert("avg_pnl_per_trade".into(), avg_pnl.round_dp(2).to_string());
+        report.insert("avg_pnl_bps".into(), avg_bps.round_dp(1).to_string());
+        report.insert(
+            "best_trade_pnl".into(),
+            pnls.iter().max().cloned().unwrap_or(dec!(0)).to_string(),
+        );
+        report.insert(
+            "worst_trade_pnl".into(),
+            pnls.iter().min().cloned().unwrap_or(dec!(0)).to_string(),
+        );
+        report.insert(
+            "total_notional".into(),
+            total_notional.round_dp(0).to_string(),
+        );
+        report.insert("sharpe_estimate".into(), format!("{:.2}", sharpe));
+
+        Ok(report)
+    }
+
+    pub async fn recent(&self, n: usize) -> Result<Vec<HashMap<String, String>>, sqlx::Error> {
+        let trades = self.fetch_all_trades().await?;
+        let result = trades
+            .into_iter()
+            .rev()
+            .take(n)
+            .map(|t| {
+                let mut m = HashMap::new();
+                m.insert("time".into(), t.timestamp.format("%H:%M").to_string());
+                m.insert(
+                    "asset".into(),
+                    t.buy_leg
+                        .symbol
+                        .split('/')
+                        .next()
+                        .unwrap_or("?")
+                        .to_string(),
+                );
+                m.insert(
+                    "route".into(),
+                    format!("Buy {:?} / Sell {:?}", t.buy_leg.venue, t.sell_leg.venue),
+                );
+                m.insert("pnl".into(), t.net_pnl().round_dp(2).to_string());
+                m.insert("bps".into(), t.net_pnl_bps().round_dp(1).to_string());
+                m.insert("is_win".into(), (t.net_pnl() > dec!(0)).to_string());
+                m
+            })
+            .collect();
+        Ok(result)
+    }
+
+    pub async fn export_plotly_html(&self, filepath: &str) -> Result<(), Box<dyn Error>> {
+        let data = self.cumulative_pnl().await?;
         let x_values: Vec<String> = data.iter().map(|(ts, _)| ts.to_rfc3339()).collect();
         let y_values: Vec<f64> = data
             .iter()
@@ -108,7 +283,7 @@ impl PnLEngine {
         let x_json = serde_json::to_string(&x_values)?;
         let y_json = serde_json::to_string(&y_values)?;
 
-        let html_content = format!(
+        let html = format!(
             r#"<!DOCTYPE html>
 <html>
 <head>
@@ -154,96 +329,16 @@ impl PnLEngine {
 </body>
 </html>"#,
             x_json = x_json,
-            y_json = y_json
+            y_json = y_json,
         );
 
         let mut file = File::create(filepath)?;
-        file.write_all(html_content.as_bytes())?;
+        file.write_all(html.as_bytes())?;
         Ok(())
     }
 
-    pub fn summary(&self) -> HashMap<String, String> {
-        let mut report = HashMap::new();
-        if self.trades.is_empty() {
-            return report;
-        }
-
-        let count = self.trades.len();
-        let pnls: Vec<Decimal> = self.trades.iter().map(|t| t.net_pnl()).collect();
-
-        let total_pnl: Decimal = pnls.iter().sum();
-        let total_fees: Decimal = self.trades.iter().map(|t| t.total_fees()).sum();
-        let total_notional: Decimal = self.trades.iter().map(|t| t.notional()).sum();
-
-        let wins = pnls.iter().filter(|&&p| p > dec!(0)).count();
-        let win_rate = (wins as f64 / count as f64) * 100.0;
-
-        let avg_pnl = total_pnl / Decimal::from(count);
-        let total_bps = self.trades.iter().map(|t| t.net_pnl_bps()).sum::<Decimal>();
-        let avg_bps = total_bps / Decimal::from(count);
-
-        let avg_f = avg_pnl.to_f64().unwrap_or(0.0);
-        let variance = pnls
-            .iter()
-            .map(|p| (p.to_f64().unwrap_or(0.0) - avg_f).powi(2))
-            .sum::<f64>()
-            / count as f64;
-        let std_dev = variance.sqrt();
-        let sharpe = if std_dev > 0.0 { avg_f / std_dev } else { 0.0 };
-
-        report.insert("total_trades".into(), count.to_string());
-        report.insert("win_rate".into(), format!("{:.1}%", win_rate));
-        report.insert("total_pnl_usd".into(), total_pnl.round_dp(2).to_string());
-        report.insert("total_fees_usd".into(), total_fees.round_dp(2).to_string());
-        report.insert("avg_pnl_per_trade".into(), avg_pnl.round_dp(2).to_string());
-        report.insert("avg_pnl_bps".into(), avg_bps.round_dp(1).to_string());
-        report.insert(
-            "best_trade_pnl".into(),
-            pnls.iter().max().cloned().unwrap_or(dec!(0)).to_string(),
-        );
-        report.insert(
-            "worst_trade_pnl".into(),
-            pnls.iter().min().cloned().unwrap_or(dec!(0)).to_string(),
-        );
-        report.insert(
-            "total_notional".into(),
-            total_notional.round_dp(0).to_string(),
-        );
-        report.insert("sharpe_estimate".into(), format!("{:.2}", sharpe));
-
-        report
-    }
-
-    pub fn recent(&self, n: usize) -> Vec<HashMap<String, String>> {
-        self.trades
-            .iter()
-            .rev()
-            .take(n)
-            .map(|t| {
-                let mut m = HashMap::new();
-                m.insert("time".into(), t.timestamp.format("%H:%M").to_string());
-                m.insert(
-                    "asset".into(),
-                    t.buy_leg
-                        .symbol
-                        .split('/')
-                        .next()
-                        .unwrap_or("?")
-                        .to_string(),
-                );
-                m.insert(
-                    "route".into(),
-                    format!("Buy {:?} / Sell {:?}", t.buy_leg.venue, t.sell_leg.venue),
-                );
-                m.insert("pnl".into(), t.net_pnl().round_dp(2).to_string());
-                m.insert("bps".into(), t.net_pnl_bps().round_dp(1).to_string());
-                m.insert("is_win".into(), (t.net_pnl() > dec!(0)).to_string());
-                m
-            })
-            .collect()
-    }
-
-    pub fn export_csv(&self, filepath: &str) -> Result<(), Box<dyn Error>> {
+    pub async fn export_csv(&self, filepath: &str) -> Result<(), Box<dyn Error>> {
+        let trades = self.fetch_all_trades().await?;
         let file = File::create(filepath)?;
         let mut wtr = Writer::from_writer(file);
 
@@ -255,7 +350,7 @@ impl PnLEngine {
             "net_pnl",
             "bps",
         ])?;
-        for t in &self.trades {
+        for t in &trades {
             wtr.write_record([
                 &t.id,
                 &t.timestamp.to_rfc3339(),

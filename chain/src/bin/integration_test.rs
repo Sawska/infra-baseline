@@ -1,17 +1,16 @@
 use anyhow::{Context, Result};
 use arb_chain::{ChainClient, TransactionBuilder};
-use arb_core::{Address, TokenAmount, WalletManager};
-use dotenvy::dotenv;
-use std::env;
+use arb_core::{APP_CONFIG, Address, TokenAmount, WalletManager};
 use std::io::{self, Write};
 use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv().ok();
-
-    let keyfile_raw =
-        env::var("KEYFILE_PATH").context("KEYFILE_PATH env var must be set in .env")?;
+    let keyfile_raw = APP_CONFIG
+        .wallet
+        .keyfile_path
+        .clone()
+        .context("KEYFILE_PATH env var must be set in .env")?;
 
     let cleaned_path = keyfile_raw.trim().trim_matches('"').trim_matches('\'');
     let keyfile_path = PathBuf::from(cleaned_path);
@@ -33,12 +32,14 @@ async fn main() -> Result<()> {
     let wallet = WalletManager::from_keyfile(&keyfile_path, password)
         .context("Failed to unlock wallet. Check your password and file integrity.")?;
 
-    let rpc_url = env::var("RPC_URL").context("RPC_URL env var must be set in .env")?;
+    let rpc_url = APP_CONFIG
+        .chain
+        .rpc_url
+        .clone()
+        .context("RPC_URL env var must be set in .env")?;
     let client = ChainClient::new(&rpc_url);
 
-    let chain_id = env::var("CHAIN_ID")
-        .unwrap_or_else(|_| "11155111".to_string())
-        .parse::<u64>()?;
+    let chain_id = APP_CONFIG.chain.chain_id;
 
     println!("\nAuthenticated Wallet: {}", wallet.address());
     let balance = client.get_balance(wallet.address()).await?;

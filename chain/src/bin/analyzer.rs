@@ -3,12 +3,10 @@ use alloy_rpc_types::{Transaction, TransactionTrait};
 use alloy_sol_types::{SolCall, SolEvent, SolInterface, sol};
 use anyhow::{Context, Result};
 use arb_chain::ChainClient;
-use arb_core::{TokenAmount, TransactionReceipt};
+use arb_core::{APP_CONFIG, TokenAmount, TransactionReceipt};
 use clap::Parser;
-use dotenvy::dotenv;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::env;
 use std::fs;
 
 sol! {
@@ -359,19 +357,15 @@ impl Analyzer {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv().ok();
     let args = Args::parse();
 
     let rpc_url = args
         .rpc
         .clone()
-        .or_else(|| env::var("RPC_URL").ok())
+        .or_else(|| APP_CONFIG.chain.rpc_url.clone())
         .context("RPC URL must be provided via --rpc flag or RPC_URL in .env")?;
 
-    let chain_id = env::var("CHAIN_ID")
-        .unwrap()
-        .parse::<u64>()
-        .context("Invalid CHAIN_ID environment variable")?;
+    let chain_id = APP_CONFIG.chain.chain_id;
 
     if !args.json {
         println!("Targeting Chain ID: {} | RPC: {}", chain_id, rpc_url);

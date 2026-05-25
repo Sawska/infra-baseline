@@ -18,6 +18,7 @@ async fn setup_mock_generator() -> SignalGenerator {
     let config = ExchangeConfig {
         api_key: "test".to_string(),
         secret: "test".to_string(),
+        passphrase: None,
         is_sandbox: true,
         skip_connection_validation: true,
         production: false,

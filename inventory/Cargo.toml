@@ -24,3 +24,4 @@ tokio-tungstenite = "0.28.0"
 url.workspace = true
 [dev-dependencies]
 approx ={ version = "0.5.1"}
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls", "postgres", "macros"] }

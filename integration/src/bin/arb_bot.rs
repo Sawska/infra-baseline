@@ -1,9 +1,14 @@
+use crate::monitor::{MempoolMonitor, MonitorEvent};
+use crate::predictive_rebalancer::{PredictiveConfig, PredictiveRebalancer};
 use alloy_primitives::{Address as AlloyAddress, U256};
 use alloy_sol_types::{SolCall, sol};
 use anyhow::Result;
 use arb_chain::client::ChainClient;
-use arb_core::WalletManager;
-use arb_core::types::{Address, TokenAmount, TransactionRequest};
+use arb_core::{
+    APP_CONFIG, WalletManager,
+    types::{Address, TokenAmount, TransactionRequest},
+};
+use chrono::Utc;
 use exchange::client::{ExchangeClient, ExchangeType};
 use exchange::config::ExchangeConfig;
 use executor::engine::{Executor, ExecutorConfig, ExecutorState};
@@ -17,26 +22,23 @@ use executor::telegram_alert::TelegramAlert;
 use executor::validator;
 use inventory::tracker::{InventoryTracker, Venue};
 use log::{error, info, warn};
+use pnl::{ArbRecord, PnLEngine, Side, TradeLeg};
 use pricing::amm::Pool;
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::prelude::*;
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
-use std::env;
-use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
-use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use strategy::fees::FeeStructure;
 use strategy::generator::{GeneratorConfig, PairMetadata, SignalGenerator};
 use strategy::scorer::{ScorerConfig, SignalScorer};
+use strategy::signal::Direction;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
 use warp::Filter;
 
 const KILL_SWITCH_FILE: &str = "/tmp/arb_bot_kill";
 const HEARTBEAT_FILE: &str = "/tmp/arb_bot_heartbeat";
-const PNL_HISTORY_FILE: &str = "pnl_history.csv";
 const PNL_CHART_FILE: &str = "pnl_chart.html";
 
 sol! {
@@ -44,7 +46,7 @@ sol! {
 }
 
 pub fn is_kill_switch_active() -> bool {
-    Path::new(KILL_SWITCH_FILE).exists()
+    std::path::Path::new(KILL_SWITCH_FILE).exists()
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +113,9 @@ struct ArbBot {
     daily_trades: Vec<f64>,
     pair_configs: HashMap<String, PerPairConfig>,
     gas_oracle: GasOracle,
+    pred_rebalancer: Arc<PredictiveRebalancer>,
+    pools_map: HashMap<String, Pool>,
+    pnl_engine: PnLEngine,
 }
 
 impl ArbBot {
@@ -125,9 +130,14 @@ impl ArbBot {
             .await?,
         );
 
-        let rpc_url = env::var("ARBITRUM_RPC_URL")?;
+        let rpc_url = APP_CONFIG.chain.arbitrum_rpc_url.clone();
         let chain_client = Arc::new(ChainClient::new(&rpc_url));
-        let wallet = Arc::new(WalletManager::from_env("PRIVATE_KEY")?);
+        let private_key = APP_CONFIG
+            .wallet
+            .private_key
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("PRIVATE_KEY not found in .env"))?;
+        let wallet = Arc::new(WalletManager::from_private_key(private_key)?);
         let shared_inventory = Arc::new(Mutex::new(InventoryTracker::new(Some(&wallet))));
 
         let mut generator = SignalGenerator::new(
@@ -167,12 +177,33 @@ impl ArbBot {
 
         let scorer = SignalScorer::new(Some(ScorerConfig::default()));
 
+        let mut address_to_token = HashMap::new();
+        for pool in pools_map.values() {
+            let (t0, t1) = pool.tokens();
+            address_to_token.insert(t0.address, t0);
+            address_to_token.insert(t1.address, t1);
+        }
+
+        let weth_addr = config
+            .token_addresses
+            .get("WETH")
+            .copied()
+            .expect("WETH address must be configured");
+
+        let pred_rebalancer = Arc::new(PredictiveRebalancer::new(
+            shared_inventory.clone(),
+            PredictiveConfig::default(),
+            address_to_token,
+            pools_map.clone(),
+            weth_addr,
+        ));
+
         let executor = Executor::new(
             exchange.clone(),
             Some(chain_client.clone()),
             Some(wallet.clone()),
             config.token_addresses.clone(),
-            pools_map,
+            pools_map.clone(),
             shared_inventory.clone(),
             Some(ExecutorConfig {
                 simulation_mode: config.simulation,
@@ -200,22 +231,14 @@ impl ArbBot {
         let validator = validator::PreTradeValidator::default();
         let kill_switch = AutoKillSwitch::new();
         let telegram = Arc::new(TelegramAlert::new(
-            env::var("TELEGRAM_CHAT_ID").unwrap_or_default(),
+            APP_CONFIG.telegram.chat_id.clone().unwrap_or_default(),
         ));
 
-        let path = Path::new(PNL_HISTORY_FILE);
-
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let file_exists = path.exists();
-
-        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-
-        if !file_exists {
-            writeln!(file, "Timestamp,SessionPnL,CumulativePnL,Drawdown")?;
-        }
+        let pg_pool = db::init_db(&config.database_url)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to initialise database: {}", e))?;
+        let pnl_engine = PnLEngine::new(pg_pool);
+        info!("PostgreSQL PnL engine connected.");
 
         let bot = Self {
             shared_inventory,
@@ -242,6 +265,9 @@ impl ArbBot {
             daily_trades: Vec::new(),
             pair_configs: config.pair_configs,
             gas_oracle: GasOracle::new(0.1, 0.1, 3_000.0),
+            pred_rebalancer,
+            pools_map,
+            pnl_engine,
         };
 
         bot.sync_binance_balances().await?;
@@ -265,13 +291,12 @@ impl ArbBot {
     }
 
     fn update_heartbeat(&self) {
-        let start = SystemTime::now();
-        let since_the_epoch = start
+        let since_epoch = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
-        let timestamp = since_the_epoch.as_secs();
+            .expect("Time went backwards")
+            .as_secs();
 
-        if let Err(e) = fs::write(HEARTBEAT_FILE, timestamp.to_string()) {
+        if let Err(e) = std::fs::write(HEARTBEAT_FILE, since_epoch.to_string()) {
             error!("Failed to update heartbeat: {}", e);
         }
     }
@@ -339,144 +364,10 @@ impl ArbBot {
         }
     }
 
-    fn generate_pnl_chart_html(&self) {
-        let mut file = match fs::File::open(PNL_HISTORY_FILE) {
-            Ok(f) => f,
-            Err(_) => return,
-        };
-        let mut contents = String::new();
-        if file.read_to_string(&mut contents).is_err() {
-            return;
+    async fn save_pnl_snapshot(&self) {
+        if let Err(e) = self.pnl_engine.export_plotly_html(PNL_CHART_FILE).await {
+            warn!("Failed to export PnL chart: {}", e);
         }
-
-        let mut dates = Vec::new();
-        let mut pnls = Vec::new();
-        let mut drawdowns = Vec::new();
-
-        for line in contents.lines().skip(1) {
-            let parts: Vec<&str> = line.split(',').collect();
-            if parts.len() >= 4 {
-                if let Ok(ts) = parts[0].parse::<u64>() {
-                    dates.push(ts * 1000);
-                }
-                if let Ok(cp) = parts[2].parse::<f64>() {
-                    pnls.push(cp);
-                }
-                if let Ok(dd) = parts[3].parse::<f64>() {
-                    drawdowns.push(dd);
-                }
-            }
-        }
-
-        let html_content = format!(
-            r#"
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Arb Bot PnL Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <style>
-        body {{ background-color: #1a1a1a; color: #e0e0e0; font-family: sans-serif; margin: 20px; }}
-        #chart-container {{ width: 100%; height: 600px; }}
-    </style>
-</head>
-<body>
-    <h2>🚀 Arbitrage Bot Performance</h2>
-    <div id="chart-container"></div>
-    <script type="text/javascript">
-        var dom = document.getElementById('chart-container');
-        var myChart = echarts.init(dom, 'dark');
-        var dates = {:?};
-        var pnls = {:?};
-        var drawdowns = {:?};
-
-        var formattedDates = dates.map(ts => new Date(ts).toLocaleTimeString());
-
-        var option = {{
-            backgroundColor: '#1a1a1a',
-            tooltip: {{ trigger: 'axis' }},
-            legend: {{ data: ['Cumulative PnL', 'Drawdown %'] }},
-            grid: {{ left: '3%', right: '4%', bottom: '3%', containLabel: true }},
-            xAxis: {{ type: 'category', boundaryGap: false, data: formattedDates }},
-            yAxis: [
-                {{ type: 'value', name: 'PnL ($)', position: 'left', axisLabel: {{ formatter: '${{value}}' }} }},
-                {{ type: 'value', name: 'Drawdown (%)', position: 'right', axisLabel: {{ formatter: '{{value}}%' }}, max: 100 }}
-            ],
-            series: [
-                {{
-                    name: 'Cumulative PnL',
-                    type: 'line',
-                    smooth: true,
-                    data: pnls,
-                    lineStyle: {{ color: '#00e676', width: 3 }},
-                    areaStyle: {{ color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{{ offset: 0, color: 'rgba(0, 230, 118, 0.3)' }}, {{ offset: 1, color: 'rgba(0, 230, 118, 0.05)' }}]) }}
-                }},
-                {{
-                    name: 'Drawdown %',
-                    type: 'line',
-                    yAxisIndex: 1,
-                    data: drawdowns,
-                    lineStyle: {{ color: '#ff1744', width: 1, type: 'dashed' }},
-                    areaStyle: {{ color: 'rgba(255, 23, 68, 0.1)' }}
-                }}
-            ]
-        }};
-        myChart.setOption(option);
-    </script>
-</body>
-</html>
-"#,
-            dates, pnls, drawdowns
-        );
-
-        let path = Path::new(PNL_CHART_FILE);
-
-        if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent)
-                .map_err(|e| anyhow::anyhow!("Failed to create chart directory: {}", e));
-        }
-
-        let _ = fs::write(path, html_content)
-            .map_err(|e| anyhow::anyhow!("Failed to write PnL chart file: {}", e));
-    }
-
-    fn save_pnl_snapshot(&self) {
-        let current_capital = self.risk_manager.current_capital;
-        let initial_capital = self.risk_manager.initial_capital;
-        let drawdown = if initial_capital > 0.0 {
-            ((initial_capital - current_capital) / initial_capital * 100.0).max(0.0)
-        } else {
-            0.0
-        };
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        let mut file = match OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(PNL_HISTORY_FILE)
-        {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("Failed to open PNL history file: {e}");
-                return;
-            }
-        };
-
-        if let Err(e) = writeln!(
-            file,
-            "{},{:.4},{:.4},{:.2}",
-            now, self.session_pnl, self.cumulative_pnl, drawdown
-        ) {
-            eprintln!("Failed to write PNL snapshot: {e}");
-            return;
-        }
-
-        self.generate_pnl_chart_html();
     }
 
     pub fn generate_daily_summary(&self) -> String {
@@ -499,11 +390,11 @@ impl ArbBot {
 
         format!(
             "<b>Daily Summary Report</b>\n\n\
-        Trades: {} ({}W / {}L)\n\
-        Win Rate: {:.0}%\n\n\
-        Cumulative PnL: ${:+.2}\n\
-        Drawdown: {:.1}%\n\
-        Capital: ${:.2}",
+            Trades: {} ({}W / {}L)\n\
+            Win Rate: {:.0}%\n\n\
+            Cumulative PnL: ${:+.2}\n\
+            Drawdown: {:.1}%\n\
+            Capital: ${:.2}",
             self.daily_trades.len(),
             wins,
             losses,
@@ -520,8 +411,8 @@ impl ArbBot {
 
     fn get_error_count_last_hour(&mut self) -> usize {
         let hour_ago = Instant::now() - Duration::from_secs(3600);
-        while let Some(timestamp) = self.error_timestamps.front() {
-            if *timestamp < hour_ago {
+        while let Some(ts) = self.error_timestamps.front() {
+            if *ts < hour_ago {
                 self.error_timestamps.pop_front();
             } else {
                 break;
@@ -612,6 +503,37 @@ impl ArbBot {
         self.running = true;
         self.trading_active = true;
 
+        let rebalancer_ref = self.pred_rebalancer.clone();
+        let executor_ref = self.executor.clone();
+        tokio::spawn(async move {
+            info!("Predictive Rebalancing mempool monitor started.");
+            if let Some(ws_url) = APP_CONFIG.chain.ws_url.clone() {
+                let rebalancer_ref = self.pred_rebalancer.clone();
+                tokio::spawn(async move {
+                    let monitor = MempoolMonitor::new(ws_url, move |event| {
+                        let rebalancer = rebalancer_ref.clone();
+                        async move {
+                            if let MonitorEvent::MempoolSwap(swap) = event {
+                                if let Some(plan) = rebalancer.on_monitor_event(&swap).await {
+                                    if plan.should_execute && !plan.transfers.is_empty() {
+                                        info!(
+                                            "🚨 PREDICTIVE REBALANCE TRIGGERED! Reason: {}",
+                                            plan.reason
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    if let Err(e) = monitor.start().await {
+                        warn!("Mempool monitor exited: {}", e);
+                    }
+                });
+            } else {
+                warn!("WS_URL not set — mempool monitor disabled.");
+            }
+        });
+
         if self.dry_run {
             info!("DRY RUN MODE ENABLED - No trades will be executed");
         }
@@ -677,8 +599,7 @@ impl ArbBot {
             }
 
             if last_health_check.elapsed() >= Duration::from_secs(60) {
-                self.save_pnl_snapshot();
-
+                self.save_pnl_snapshot().await;
                 self.update_gas_oracle().await;
 
                 if let Err(e) = self.verify_balances().await {
@@ -759,6 +680,15 @@ impl ArbBot {
         if self.executor.is_circuit_open().await {
             info!("Circuit breaker open - skipping tick");
             return Ok(());
+        }
+
+        if let Some(eth_price) = self.generator.last_price("WETH/USDT") {
+            if let Some(price) = Decimal::from_f64(eth_price) {
+                self.pred_rebalancer.update_price("WETH", price).await;
+                self.pred_rebalancer
+                    .update_price("USDT", Decimal::ONE)
+                    .await;
+            }
         }
 
         self.generator.clear_queue();
@@ -891,13 +821,12 @@ impl ArbBot {
             let trade_usd = best_signal.size * best_signal.cex_price;
             let daily_loss = self.risk_manager.daily_pnl;
             let total_capital = self.risk_manager.current_capital;
-            let trades_this_hour = self.risk_manager.trades_this_hour;
 
             if let Err(reason) = safety_check(
                 trade_usd,
                 daily_loss,
                 total_capital,
-                trades_this_hour.try_into().unwrap(),
+                self.risk_manager.trades_this_hour.try_into().unwrap(),
             ) {
                 warn!("ABSOLUTE SAFETY BLOCKED: {}", reason);
                 self.kill_switch
@@ -922,10 +851,12 @@ impl ArbBot {
             self.session_pnl += pnl;
             self.cumulative_pnl += pnl;
             self.daily_trades.push(pnl);
-            self.save_pnl_snapshot();
 
             if success {
                 self.last_trade_time = Some(Instant::now());
+
+                self.persist_arb_record(&ctx, &signal_to_execute).await;
+
                 let trade_msg = format!(
                     "✅ <b>Trade Completed</b>\nPair: {}\nPnL: ${:.2}\nSpread: {:.1}bps",
                     best_signal.pair, pnl, best_signal.spread_bps
@@ -957,6 +888,82 @@ impl ArbBot {
             }
         }
         Ok(())
+    }
+
+    async fn persist_arb_record(
+        &self,
+        ctx: &executor::engine::ExecutionContext,
+        signal: &strategy::signal::Signal,
+    ) {
+        let pair_cfg = self
+            .pair_configs
+            .get(&signal.pair)
+            .cloned()
+            .unwrap_or_else(PerPairConfig::pepe_default);
+
+        let now = Utc::now();
+        let trade_id = format!(
+            "{}-{}",
+            signal.pair.replace('/', "_"),
+            now.timestamp_millis()
+        );
+
+        let fill_size =
+            Decimal::from_f64(ctx.leg1_fill_size.unwrap_or(0.0)).unwrap_or(Decimal::ZERO);
+        let leg1_price =
+            Decimal::from_f64(ctx.leg1_fill_price.unwrap_or(0.0)).unwrap_or(Decimal::ZERO);
+        let leg2_price =
+            Decimal::from_f64(ctx.leg2_fill_price.unwrap_or(0.0)).unwrap_or(Decimal::ZERO);
+
+        let cex_fee_rate = Decimal::from_f64(pair_cfg.fee_structure.cex_taker_bps / 10_000.0)
+            .unwrap_or(Decimal::ZERO);
+        let cex_fee = fill_size * leg1_price * cex_fee_rate;
+
+        let parts: Vec<&str> = signal.pair.split('/').collect();
+        let base_sym = parts.first().copied().unwrap_or("BASE");
+        let quote_sym = parts.get(1).copied().unwrap_or("USDT");
+
+        let (buy_venue, sell_venue, buy_fee_asset, sell_fee_asset) = match signal.direction {
+            Direction::BuyCexSellDex => (Venue::Cex, Venue::Wallet, quote_sym, base_sym),
+            Direction::BuyDexSellCex => (Venue::Wallet, Venue::Cex, quote_sym, base_sym),
+        };
+
+        let buy_leg = TradeLeg {
+            id: format!("{}-buy", trade_id),
+            timestamp: now,
+            venue: buy_venue,
+            symbol: signal.pair.clone(),
+            side: Side::Buy,
+            amount: fill_size,
+            price: leg1_price,
+            fee: cex_fee,
+            fee_asset: buy_fee_asset.to_string(),
+        };
+
+        let sell_leg = TradeLeg {
+            id: format!("{}-sell", trade_id),
+            timestamp: now,
+            venue: sell_venue,
+            symbol: signal.pair.clone(),
+            side: Side::Sell,
+            amount: fill_size,
+            price: leg2_price,
+            fee: Decimal::ZERO,
+            fee_asset: sell_fee_asset.to_string(),
+        };
+
+        let record = ArbRecord {
+            id: trade_id,
+            timestamp: now,
+            buy_leg,
+            sell_leg,
+            gas_cost_usd: Decimal::from_f64(pair_cfg.fee_structure.gas_cost_usd)
+                .unwrap_or(Decimal::ZERO),
+        };
+
+        if let Err(e) = self.pnl_engine.record(record).await {
+            warn!("Failed to persist arb trade to database: {}", e);
+        }
     }
 
     async fn update_gas_oracle(&mut self) {
@@ -993,7 +1000,7 @@ impl ArbBot {
         let expected_eth_dex = inventory.get_balance(Venue::Wallet, "ETH");
         let eth_dex_diff = (actual_eth_dex - expected_eth_dex).abs();
 
-        let threshold = rust_decimal::Decimal::from_f64(0.001).unwrap();
+        let threshold = Decimal::from_f64(0.001).unwrap();
 
         if eth_dex_diff > threshold {
             let msg = format!(
@@ -1016,7 +1023,7 @@ impl ArbBot {
                 let actual_cex = actual_cex_map
                     .get(base)
                     .map(|b| b.free.to_human())
-                    .unwrap_or(rust_decimal::Decimal::ZERO);
+                    .unwrap_or(Decimal::ZERO);
                 let expected_cex = inventory.get_balance(Venue::Cex, base);
 
                 let cex_diff = (actual_cex - expected_cex).abs();
@@ -1047,6 +1054,7 @@ struct BotConfig {
     dex_pools: HashMap<String, String>,
     token_addresses: HashMap<String, Address>,
     pair_configs: HashMap<String, PerPairConfig>,
+    database_url: String,
 }
 
 #[tokio::main]
@@ -1055,8 +1063,6 @@ async fn main() -> Result<()> {
         eprintln!("Failed to initialize logger: {}", e);
         return Ok(());
     }
-
-    dotenvy::dotenv().ok();
 
     tokio::spawn(async move {
         let metrics_route = warp::path("metrics").map(gather_metrics).boxed();
@@ -1068,54 +1074,68 @@ async fn main() -> Result<()> {
     info!("=== Configuring Bot for Multiple Pairs (PEPE & ETH) ===");
 
     let mut token_addresses = HashMap::new();
-
-    let pepe_addr = env::var("PEPE_TOKEN")
-        .unwrap_or_else(|_| "0x25d887Ce7a35172C62FeBFD67a1856F20FaEbB00".to_string());
-    token_addresses.insert("PEPE".to_string(), Address::from_string(&pepe_addr)?);
-
-    let usdt_addr = env::var("ARBITRUM_USDT")
-        .unwrap_or_else(|_| "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9".to_string());
-    token_addresses.insert("USDT".to_string(), Address::from_string(&usdt_addr)?);
-
-    let weth_addr = env::var("ARBITRUM_WETH")
-        .unwrap_or_else(|_| "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1".to_string());
-    token_addresses.insert("WETH".to_string(), Address::from_string(&weth_addr)?);
-
-    let mut dex_pools = HashMap::new();
-
-    dex_pools.insert(
-        "PEPE/USDT".to_string(),
-        env::var("PEPE_USDT_POOL")
-            .unwrap_or_else(|_| "0xcd518702e7d8f16d8a6407bf5d22e0f0eec15162".to_string()),
+    token_addresses.insert(
+        "PEPE".to_string(),
+        Address::from_string(&APP_CONFIG.tokens.pepe)?,
+    );
+    token_addresses.insert(
+        "USDT".to_string(),
+        Address::from_string(&APP_CONFIG.tokens.arbitrum_usdt)?,
+    );
+    token_addresses.insert(
+        "WETH".to_string(),
+        Address::from_string(&APP_CONFIG.tokens.arbitrum_weth)?,
     );
 
+    let mut dex_pools = HashMap::new();
+    dex_pools.insert(
+        "PEPE/USDT".to_string(),
+        APP_CONFIG
+            .dex
+            .arbitrum
+            .pools
+            .pepe_usdt_primary
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("ARBITRUM_PEPE_USDT_POOL is not configured"))?,
+    );
     dex_pools.insert(
         "WETH/USDT".to_string(),
-        "0x641c00a822e8b671738d32a431a4fb6074e5c79d".to_string(),
+        APP_CONFIG
+            .dex
+            .arbitrum
+            .pools
+            .weth_usdt_primary
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("ARBITRUM_WETH_USDT_POOL is not configured"))?,
     );
 
     let mut pair_configs = HashMap::new();
     pair_configs.insert("PEPE/USDT".to_string(), PerPairConfig::pepe_default());
     pair_configs.insert("WETH/USDT".to_string(), PerPairConfig::eth_default());
 
+    let database_url = {
+        let url = APP_CONFIG.runtime.database_url.clone();
+        if url.is_empty() {
+            panic!("DATABASE_URL must be set (e.g. postgres://user:pass@localhost/arb_db)");
+        }
+        url
+    };
+
     let config = BotConfig {
         pairs: vec!["PEPE/USDT".to_string(), "WETH/USDT".to_string()],
-        simulation: false,
-        dry_run: false,
+        simulation: APP_CONFIG.runtime.simulation,
+        dry_run: APP_CONFIG.runtime.dry_run,
         webhook_url: None,
-        dex_router: Some(
-            env::var("ARBITRUM_ROUTER")
-                .unwrap_or_else(|_| "0xE592427A0AEce92De3Edee1F18E0157C05861564".to_string()),
-        ),
+        dex_router: Some(APP_CONFIG.dex.arbitrum.uniswap_v3.router.clone()),
         dex_pools,
         token_addresses,
         pair_configs,
+        database_url,
     };
 
     match ArbBot::new(config).await {
         Ok(mut bot) => {
-            info!("Bot initialized. Heartbeat file: {}", HEARTBEAT_FILE);
-            info!("PnL History file: {}", PNL_HISTORY_FILE);
+            info!("Bot initialized. Heartbeat: {}", HEARTBEAT_FILE);
             info!("PnL Dashboard: {}", PNL_CHART_FILE);
             bot.run().await;
         }

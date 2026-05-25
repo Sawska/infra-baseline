@@ -34,6 +34,7 @@ async fn get_test_client(exchange: ExchangeType) -> ExchangeClient {
     let config = ExchangeConfig {
         api_key: "test_key".into(),
         secret: "test_secret".into(),
+        passphrase: None,
         is_sandbox: true,
         skip_connection_validation: false,
         production: false,
@@ -55,6 +56,18 @@ async fn get_test_client(exchange: ExchangeType) -> ExchangeClient {
         ExchangeType::Bybit => (
             "https://api-testnet.bybit.com".into(),
             "wss://stream-testnet.bybit.com/v5/public".into(),
+        ),
+        ExchangeType::Okx => (
+            "https://www.okx.com".into(),
+            "wss://ws.okx.com:8443/ws/v5/public".into(),
+        ),
+        ExchangeType::Coinbase => (
+            "https://api.coinbase.com/api/v3/brokerage".into(),
+            "wss://advanced-trade-ws.coinbase.com".into(),
+        ),
+        ExchangeType::Kraken => (
+            "https://api.kraken.com".into(),
+            "wss://ws.kraken.com/v2".into(),
         ),
     };
 

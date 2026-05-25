@@ -7,8 +7,6 @@ use arb_core::{Address, TokenAmount, TransactionRequest};
 use rust_decimal::prelude::*;
 use std::str::FromStr;
 
-/// Represents the metadata of a Token.
-/// Note: arb_core::TokenAmount contains a specific amount, this struct describes the token itself.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Token {
     pub address: Address,
@@ -26,8 +24,6 @@ impl Token {
     }
 }
 
-/// Represents a Uniswap V2 liquidity pair.
-/// All math uses integers (U256) only for core swap logic.
 #[derive(Clone, Debug)]
 pub struct UniswapV2Pair {
     pub address: Address,
@@ -39,7 +35,6 @@ pub struct UniswapV2Pair {
 }
 
 impl UniswapV2Pair {
-    /// Creates a new Uniswap V2 Pair instance.
     pub fn new(
         address: Address,
         token0: Token,
@@ -58,12 +53,6 @@ impl UniswapV2Pair {
         }
     }
 
-    /// Calculate output amount for a given input.
-    /// Matches Solidity exactly:
-    /// amount_in_with_fee = amount_in * (10000 - fee_bps)
-    /// numerator = amount_in_with_fee * reserve_out
-    /// denominator = reserve_in * 10000 + amount_in_with_fee
-    /// amount_out = numerator // denominator
     pub fn get_amount_out(&self, amount_in: U256, token_in: &Token) -> Result<U256> {
         let (reserve_in, reserve_out) = self.get_reserves_ordered(token_in)?;
 
@@ -95,11 +84,6 @@ impl UniswapV2Pair {
         Ok(numerator / denominator)
     }
 
-    /// Calculate required input for desired output.
-    /// (Inverse of get_amount_out)
-    /// numerator = reserve_in * amount_out * 10000
-    /// denominator = (reserve_out - amount_out) * (10000 - fee_bps)
-    /// amount_in = (numerator / denominator) + 1
     pub fn get_amount_in(&self, amount_out: U256, token_out: &Token) -> Result<U256> {
         let (reserve_in, reserve_out) = self.get_reserves_ordered(token_out)?;
 
@@ -125,8 +109,6 @@ impl UniswapV2Pair {
         Ok((numerator / denominator).saturating_add(U256::from(1)))
     }
 
-    /// Returns spot price (for display only, not calculations).
-    /// Price = (reserve_out / 10^dec_out) / (reserve_in / 10^dec_in)
     pub fn get_spot_price(&self, token_in: &Token) -> Result<Decimal> {
         let (reserve_in, reserve_out) = self.get_reserves_ordered(token_in)?;
 
@@ -146,8 +128,6 @@ impl UniswapV2Pair {
         Ok(r_out_d / r_in_d)
     }
 
-    /// Returns actual execution price for given trade size.
-    /// Exec Price = amount_out / amount_in
     pub fn get_execution_price(&self, amount_in: U256, token_in: &Token) -> Result<Decimal> {
         let amount_out = self.get_amount_out(amount_in, token_in)?;
 
@@ -167,8 +147,6 @@ impl UniswapV2Pair {
         Ok(a_out_d / a_in_d)
     }
 
-    /// Returns price impact as a decimal (0.01 = 1%).
-    /// Impact = (Spot Price - Execution Price) / Spot Price
     pub fn get_price_impact(&self, amount_in: U256, token_in: &Token) -> Result<Decimal> {
         let spot = self.get_spot_price(token_in)?;
         let exec = self.get_execution_price(amount_in, token_in)?;
@@ -180,8 +158,6 @@ impl UniswapV2Pair {
         Ok((spot - exec) / spot)
     }
 
-    /// Returns a NEW pair with updated reserves after the swap.
-    /// (Immutable update)
     pub fn simulate_swap(&self, amount_in: U256, token_in: &Token) -> Result<Self> {
         let amount_out = self.get_amount_out(amount_in, token_in)?;
 
@@ -212,7 +188,6 @@ impl UniswapV2Pair {
         Ok(new_pair)
     }
 
-    /// Fetch pair data from on-chain.
     pub async fn from_chain(
         address: Address,
         client: &ChainClient,
@@ -306,7 +281,6 @@ impl UniswapV2Pair {
         Ok(Token::new(addr, decimals, symbol))
     }
 
-    /// Helper to get reserves ordered by (reserve_in, reserve_out)
     pub fn get_reserves_ordered(&self, token_in: &Token) -> Result<(U256, U256)> {
         if token_in.address == self.token0.address {
             Ok((self.reserve0, self.reserve1))
@@ -317,7 +291,6 @@ impl UniswapV2Pair {
         }
     }
 
-    /// Helper to convert U256 to Decimal using token decimals
     fn u256_to_decimal(&self, val: U256, decimals: u8) -> Decimal {
         let s = val.to_string();
         let d = Decimal::from_str(&s).unwrap_or(Decimal::ZERO);
@@ -326,15 +299,12 @@ impl UniswapV2Pair {
     }
 }
 
-/// Simplified Tick Data structure for V3
 #[derive(Clone, Debug, Default)]
 pub struct TickData {
     pub liquidity_net: i128,
     pub liquidity_gross: u128,
 }
 
-/// Represents a Uniswap V3 concentrated liquidity pool.
-/// Handles simplified single-tick math for pricing.
 #[derive(Clone, Debug)]
 pub struct UniswapV3Pool {
     pub address: Address,
@@ -373,8 +343,6 @@ impl UniswapV3Pool {
         }
     }
 
-    /// Calculate output amount assuming trade stays within current tick.
-    /// This is an approximation for small trades.
     pub fn get_amount_out(&self, amount_in: U256, token_in: &Token) -> Result<U256> {
         if amount_in.is_zero() {
             return Ok(U256::ZERO);
@@ -514,7 +482,6 @@ impl UniswapV3Pool {
         }
     }
 
-    /// Simplified V3 step math.
     fn compute_swap_step(
         &self,
         sqrt_p_start: U256,

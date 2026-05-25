@@ -18,6 +18,7 @@ async fn get_test_client() -> ExchangeClient {
     let config = ExchangeConfig {
         api_key: "test_key".into(),
         secret: "test_secret".into(),
+        passphrase: None,
         is_sandbox: true,
         skip_connection_validation: false,
         production: false,

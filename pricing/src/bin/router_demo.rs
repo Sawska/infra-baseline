@@ -1,12 +1,10 @@
 use alloy_primitives::U256;
 use anyhow::{Context, Result};
 use arb_chain::ChainClient;
-use arb_core::Address;
+use arb_core::{APP_CONFIG, Address};
 use clap::Parser;
-use dotenvy::dotenv;
 use pricing::{amm::Pool, amm::Token, router::RouteFinder};
 use rust_decimal::prelude::*;
-use std::env;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Router Demo")]
@@ -29,12 +27,11 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv().ok();
     let args = Args::parse();
 
     let rpc_url = args
         .rpc
-        .or_else(|| env::var("RPC_URL_LOCAL").ok())
+        .or_else(|| APP_CONFIG.chain.rpc_url_local.clone())
         .context("RPC URL is required")?;
     let client = ChainClient::new(&rpc_url);
 

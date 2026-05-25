@@ -1,3 +1,4 @@
+use crate::flashbots::FlashbotsClient;
 use crate::metrics::ExecutionMetrics;
 use crate::recovery::{CircuitBreaker, CircuitBreakerConfig, ReplayProtection};
 use alloy_primitives::{Address as AlloyAddress, Bytes, U256};
@@ -160,6 +161,7 @@ pub struct Executor {
     circuit_breaker: Mutex<CircuitBreaker>,
     replay_protection: Mutex<ReplayProtection>,
     metrics: ExecutionMetrics,
+    flashbots_client: Option<Arc<FlashbotsClient>>,
 }
 
 impl Executor {
@@ -183,6 +185,29 @@ impl Executor {
             webhook_url,
         });
 
+        let flashbots_client = if config.use_flashbots {
+            let relay_url = crate::config::APP_CONFIG.flashbots.relay_url.clone();
+            let auth_key = crate::config::APP_CONFIG
+                .flashbots
+                .auth_key
+                .clone_value()
+                .unwrap_or_default();
+
+            match FlashbotsClient::new(&relay_url, &auth_key) {
+                Ok(c) => Some(Arc::new(c)),
+                Err(e) => {
+                    warn!(
+                        "Failed to initialise Flashbots client: {}. \
+                         DEX legs will fall back to the public mempool.",
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Self {
             exchange,
             chain_client,
@@ -194,6 +219,7 @@ impl Executor {
             circuit_breaker: Mutex::new(CircuitBreaker::new(Some(cb_config))),
             replay_protection: Mutex::new(ReplayProtection::new(60.0)),
             metrics: ExecutionMetrics::new(),
+            flashbots_client,
         }
     }
 
@@ -230,10 +256,9 @@ impl Executor {
             return ctx;
         }
 
-        let result_ctx = if self.config.use_flashbots {
-            self.execute_dex_first(ctx).await
-        } else {
-            self.execute_cex_first(ctx).await
+        let result_ctx = match signal.direction {
+            Direction::BuyDexSellCex => self.execute_dex_first(ctx).await,
+            Direction::BuyCexSellDex => self.execute_cex_first(ctx).await,
         };
 
         {
@@ -252,7 +277,6 @@ impl Executor {
                     cb.failure_count(),
                     cb.failure_threshold()
                 );
-
                 if cb.is_open() {
                     warn!("Circuit breaker OPENED");
                 }
@@ -467,7 +491,7 @@ impl Executor {
             ctx.state = ExecutorState::Unwinding;
             self.unwind(&ctx).await;
             let err_msg = leg2.error.unwrap_or("Unknown CEX error".to_string());
-            warn!("BINANCE ERROR: {}", err_msg);
+            warn!("CEX error during leg 2: {}", err_msg);
             ctx.error = Some(format!("CEX failed: {} - unwound", err_msg));
             ctx.state = ExecutorState::Failed;
             self.metrics.leg_cex_failures.inc();
@@ -530,11 +554,8 @@ impl Executor {
         };
         let price_multiplier = if side == "buy" { 1.01 } else { 0.99 };
 
-        let mut qty = actual_size;
-        let mut price = signal.cex_price * price_multiplier;
-
-        qty = round_quantity(qty, LOT_SIZE_STEP);
-        price = round_price(price, PRICE_TICK);
+        let qty = round_quantity(actual_size, LOT_SIZE_STEP);
+        let price = round_price(signal.cex_price * price_multiplier, PRICE_TICK);
 
         if qty * price < MIN_NOTIONAL {
             return LegResult {
@@ -613,6 +634,7 @@ impl Executor {
                 error: None,
             };
         }
+
         let client = match &self.chain_client {
             Some(c) => c,
             None => {
@@ -733,10 +755,10 @@ impl Executor {
         } else {
             18
         };
+
         let (amount_in_u256, expected_fill_size) = if signal.direction == Direction::BuyDexSellCex {
             let usdt_cost = size * signal.dex_price;
             let input_val = U256::from((usdt_cost * 10f64.powi(decimals as i32)).round() as u128);
-
             (input_val, size)
         } else {
             let input_val = U256::from((size * 10f64.powi(decimals as i32)).round() as u128);
@@ -750,13 +772,10 @@ impl Executor {
             match p.get_amount_out(amount_in_u256, token_in_ref) {
                 Ok(expected) => {
                     let mut tolerance_bps = (self.config.slippage_tolerance * 10000.0) as u64;
-
                     if matches!(p, Pool::V3(_)) {
                         tolerance_bps += 50;
                     }
-
                     let factor = U256::from(10000_u64.saturating_sub(tolerance_bps));
-
                     expected
                         .checked_mul(factor)
                         .unwrap_or(U256::ZERO)
@@ -805,12 +824,11 @@ impl Executor {
                     };
                 }
             };
-            let fee = pool_v3.fee;
 
             let params = ExactInputSingleParams {
                 tokenIn: token_in_addr,
                 tokenOut: token_out_addr,
-                fee: alloy_primitives::Uint::from(fee),
+                fee: alloy_primitives::Uint::from(pool_v3.fee),
                 recipient: AlloyAddress::from(*wallet.address().0),
                 deadline,
                 amountIn: amount_in_u256,
@@ -819,11 +837,10 @@ impl Executor {
             };
             exactInputSingleCall { params }.abi_encode()
         } else {
-            let path = vec![token_in_addr, token_out_addr];
             swapExactTokensForTokensCall {
                 amountIn: amount_in_u256,
                 amountOutMin: amount_out_min,
-                path,
+                path: vec![token_in_addr, token_out_addr],
                 to: AlloyAddress::from(*wallet.address().0),
                 deadline,
             }
@@ -836,36 +853,92 @@ impl Executor {
             .gas_limit(500_000)
             .with_gas_price("high");
 
-        match builder.send_and_wait().await {
-            Ok(receipt) => {
-                if receipt.status {
-                    LegResult {
-                        success: true,
-                        price: signal.dex_price,
-                        filled: expected_fill_size,
-                        order_id: None,
-                        tx_hash: Some(receipt.tx_hash),
-                        error: None,
-                    }
-                } else {
-                    LegResult {
+        if let Some(fb) = &self.flashbots_client {
+            let raw_signed_tx = match builder.build_and_sign().await {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    return LegResult {
                         success: false,
                         price: 0.0,
                         filled: 0.0,
                         order_id: None,
-                        tx_hash: Some(receipt.tx_hash),
-                        error: Some("Tx Reverted".to_string()),
+                        tx_hash: None,
+                        error: Some(format!("Failed to sign tx for bundle: {:?}", e)),
+                    };
+                }
+            };
+
+            let current_block = client.get_block_number().await.unwrap_or(0);
+            let target_block = current_block + 1;
+
+            match fb
+                .send_bundle(vec![Bytes::from(raw_signed_tx)], target_block)
+                .await
+            {
+                Ok(bundle_hash) => {
+                    let included = client.wait_for_tx(bundle_hash).await.unwrap_or(false);
+
+                    if included {
+                        LegResult {
+                            success: true,
+                            price: signal.dex_price,
+                            filled: expected_fill_size,
+                            order_id: None,
+                            tx_hash: Some(bundle_hash.to_string()),
+                            error: None,
+                        }
+                    } else {
+                        LegResult {
+                            success: false,
+                            price: 0.0,
+                            filled: 0.0,
+                            order_id: None,
+                            tx_hash: None,
+                            error: Some(format!("Bundle missed target block {}", target_block)),
+                        }
                     }
                 }
+                Err(e) => LegResult {
+                    success: false,
+                    price: 0.0,
+                    filled: 0.0,
+                    order_id: None,
+                    tx_hash: None,
+                    error: Some(format!("Bundle submission failed: {:?}", e)),
+                },
             }
-            Err(e) => LegResult {
-                success: false,
-                price: 0.0,
-                filled: 0.0,
-                order_id: None,
-                tx_hash: None,
-                error: Some(format!("Tx Failed: {:?}", e)),
-            },
+        } else {
+            match builder.send_and_wait().await {
+                Ok(receipt) => {
+                    if receipt.status {
+                        LegResult {
+                            success: true,
+                            price: signal.dex_price,
+                            filled: expected_fill_size,
+                            order_id: None,
+                            tx_hash: Some(receipt.tx_hash),
+                            error: None,
+                        }
+                    } else {
+                        LegResult {
+                            success: false,
+                            price: 0.0,
+                            filled: 0.0,
+                            order_id: None,
+                            tx_hash: Some(receipt.tx_hash),
+                            error: Some("Tx Reverted".to_string()),
+                        }
+                    }
+                }
+                Err(e) => LegResult {
+                    success: false,
+                    price: 0.0,
+                    filled: 0.0,
+                    order_id: None,
+                    tx_hash: None,
+                    error: Some(format!("Tx Failed: {:?}", e)),
+                },
+            }
         }
     }
 
@@ -942,6 +1015,7 @@ impl Executor {
                 return Err("Approve reverted on-chain".to_string());
             }
         }
+
         Ok(())
     }
 
@@ -977,7 +1051,6 @@ impl Executor {
     }
 
     pub async fn is_circuit_open(&self) -> bool {
-        let mut cb = self.circuit_breaker.lock().await;
-        cb.is_open()
+        self.circuit_breaker.lock().await.is_open()
     }
 }

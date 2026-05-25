@@ -15,7 +15,11 @@ pub struct WalletManager {
 impl WalletManager {
     pub fn from_env(env_var: &str) -> Result<Self, ArbError> {
         let pkey = env::var(env_var).map_err(|_| ArbError::EnvVarMissing(env_var.to_string()))?;
-        let signer = pkey
+        Self::from_private_key(&pkey)
+    }
+
+    pub fn from_private_key(private_key: &str) -> Result<Self, ArbError> {
+        let signer = private_key
             .parse::<PrivateKeySigner>()
             .map_err(|e| ArbError::CryptoError(e.to_string()))?;
         Ok(Self { signer })

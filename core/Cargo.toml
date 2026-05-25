@@ -17,6 +17,8 @@ serde_json.workspace = true
 hex.workspace = true
 thiserror.workspace = true
 rust_decimal = { version = "1.0", features = ["serde-float", "serde-arbitrary-precision"] }
+dotenvy.workspace = true
+once_cell.workspace = true
 
 rand.workspace = true
 rand_08.workspace = true

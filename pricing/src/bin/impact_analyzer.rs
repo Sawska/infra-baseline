@@ -2,13 +2,11 @@
 use alloy_primitives::U256;
 use anyhow::{Context, Result};
 use arb_chain::ChainClient;
-use arb_core::Address;
+use arb_core::{APP_CONFIG, Address};
 use clap::Parser;
-use dotenvy::dotenv;
 use pricing::amm::{Pool, Token};
 use rust_decimal::prelude::*;
 use serde::Serialize;
-use std::env;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Price Impact Analyzer")]
@@ -128,12 +126,11 @@ impl PriceImpactAnalyzer {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    dotenv().ok();
     let args = Args::parse();
 
     let rpc_url = args
         .rpc
-        .or_else(|| env::var("RPC_URL").ok())
+        .or_else(|| APP_CONFIG.chain.rpc_url.clone())
         .context("RPC URL is required (env or flag)")?;
 
     println!("Connecting to {}...", rpc_url);

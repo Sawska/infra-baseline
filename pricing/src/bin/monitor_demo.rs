@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
+use arb_core::APP_CONFIG;
 use clap::Parser;
-use dotenvy::dotenv;
 use pricing::monitor::{MempoolMonitor, MonitorEvent};
 use rustls::crypto::ring;
-use std::env;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Mempool Monitor Demo")]
@@ -15,12 +14,11 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     let _ = ring::default_provider().install_default();
-    dotenv().ok();
     let args = Args::parse();
 
     let ws_url = args
         .ws
-        .or_else(|| env::var("WS_URL").ok())
+        .or_else(|| APP_CONFIG.chain.ws_url.clone())
         .context("WS URL is required")?;
 
     println!("========================================");
