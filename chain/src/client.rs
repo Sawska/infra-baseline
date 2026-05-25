@@ -6,6 +6,7 @@ use alloy_rpc_types::{
     BlockId, BlockNumberOrTag, TransactionInput, TransactionRequest as AlloyTxRequest,
 };
 use arb_core::{Address, TokenAmount, TransactionReceipt, TransactionRequest};
+use log::{debug, trace, warn};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
@@ -46,6 +47,48 @@ impl ChainClient {
             max_retries: 3,
             base_backoff_ms: 500,
         }
+    }
+
+    pub async fn get_block_number(&self) -> Result<u64, ChainError> {
+        self.execute_with_retry(|| async {
+            self.provider
+                .get_block_number()
+                .await
+                .map_err(|e| ChainError::RpcError(e.to_string()))
+        })
+        .await
+    }
+
+    pub async fn wait_for_tx(&self, tx_hash: B256) -> Result<bool, ChainError> {
+        let max_attempts = 15;
+        let poll_interval = Duration::from_secs(2);
+
+        for attempt in 1..=max_attempts {
+            match self.provider.get_transaction_receipt(tx_hash).await {
+                Ok(Some(receipt)) => {
+                    debug!("Tx {} mined in block {:?}", tx_hash, receipt.block_number);
+                    return Ok(receipt.status());
+                }
+
+                Ok(None) => {
+                    trace!(
+                        "Tx {} pending... (attempt {}/{})",
+                        tx_hash, attempt, max_attempts
+                    );
+                }
+
+                Err(e) => {
+                    warn!(
+                        "Transient RPC error fetching receipt for {}: {}",
+                        tx_hash, e
+                    );
+                }
+            }
+
+            sleep(poll_interval).await;
+        }
+
+        Err(ChainError::Timeout)
     }
 
     pub fn is_retryable(&self, error: &ChainError) -> bool {

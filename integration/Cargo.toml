@@ -25,3 +25,4 @@ log = "0.4.29"
 alloy-primitives = { version = "1.5.4", features = ["serde"] }
 env_logger = "0.11.8"
 warp = { version = "0.4.2", features = ["server"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "rust_decimal", "chrono"] }

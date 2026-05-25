@@ -186,8 +186,8 @@ impl Executor {
         });
 
         let flashbots_client = if config.use_flashbots {
-            let relay_url = crate::config::APP_CONFIG.flashbots.relay_url.clone();
-            let auth_key = crate::config::APP_CONFIG
+            let relay_url = arb_core::config::APP_CONFIG.flashbots.relay_url.clone();
+            let auth_key = arb_core::config::APP_CONFIG
                 .flashbots
                 .auth_key
                 .clone_value()
@@ -872,11 +872,13 @@ impl Executor {
             let target_block = current_block + 1;
 
             match fb
-                .send_bundle(vec![Bytes::from(raw_signed_tx)], target_block)
+                .send_bundle(vec![Bytes::from(raw_signed_tx.clone())], target_block)
                 .await
             {
-                Ok(bundle_hash) => {
-                    let included = client.wait_for_tx(bundle_hash).await.unwrap_or(false);
+                Ok(_bundle_hash) => {
+                    let tx_hash = alloy_primitives::keccak256(&raw_signed_tx);
+
+                    let included = client.wait_for_tx(tx_hash).await.unwrap_or(false);
 
                     if included {
                         LegResult {
@@ -884,7 +886,7 @@ impl Executor {
                             price: signal.dex_price,
                             filled: expected_fill_size,
                             order_id: None,
-                            tx_hash: Some(bundle_hash.to_string()),
+                            tx_hash: Some(tx_hash.to_string()),
                             error: None,
                         }
                     } else {

@@ -1,0 +1,8 @@
+2026-05-25 11:30:14 |INFO  |=== Configuring Bot for Multiple Pairs (PEPE & ETH) ===
+2026-05-25 11:30:14 |INFO  |Metrics server starting on http://localhost:3030/metrics
+2026-05-25 11:30:14 |INFO  |Initializing ArbBot...
+2026-05-25 11:30:14 |ERROR |Bot initialization failed: Variable BINANCE_TESTNET_API_KEY not found in .env (Production=false)
+2026-05-25 11:39:07 |INFO  |=== Configuring Bot for Multiple Pairs (PEPE & ETH) ===
+2026-05-25 11:39:07 |INFO  |Metrics server starting on http://localhost:3030/metrics
+2026-05-25 11:39:07 |INFO  |Initializing ArbBot...
+2026-05-25 11:39:07 |ERROR |Bot initialization failed: Variable BINANCE_TESTNET_API_KEY not found in .env (Production=false)

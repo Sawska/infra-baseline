@@ -6,6 +6,7 @@ pub static APP_CONFIG: Lazy<AppConfig> = Lazy::new(AppConfig::new);
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub runtime: RuntimeConfig,
+    pub postgres: PostgresConfig,
     pub chain: ChainConfig,
     pub wallet: WalletConfig,
     pub exchange: ExchangeSettings,
@@ -21,6 +22,7 @@ impl AppConfig {
 
         Self {
             runtime: RuntimeConfig::new(),
+            postgres: PostgresConfig::new(),
             chain: ChainConfig::new(),
             wallet: WalletConfig::new(),
             exchange: ExchangeSettings::new(),
@@ -43,7 +45,6 @@ pub struct RuntimeConfig {
     pub production: bool,
     pub simulation: bool,
     pub dry_run: bool,
-    pub database_url: String,
 }
 
 impl RuntimeConfig {
@@ -52,7 +53,6 @@ impl RuntimeConfig {
             production: env_bool("PRODUCTION", false),
             simulation: env_bool("SIMULATION", false),
             dry_run: env_bool("DRY_RUN", false),
-            database_url: env_string("DATABASE_URL", ""),
         }
     }
 }
@@ -585,6 +585,36 @@ impl fmt::Debug for SecretValue {
         } else {
             f.write_str("<unset>")
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PostgresConfig {
+    pub url: String,
+    pub max_connections: u32,
+    pub min_connections: u32,
+    pub connect_timeout_seconds: u64,
+    pub idle_timeout_seconds: u64,
+}
+
+impl PostgresConfig {
+    pub fn new() -> Self {
+        Self {
+            url: env_string(
+                "DATABASE_URL",
+                "postgres://postgres:postgres@localhost:5432/postgres",
+            ),
+            max_connections: env_parse("PG_MAX_CONNECTIONS", 10),
+            min_connections: env_parse("PG_MIN_CONNECTIONS", 1),
+            connect_timeout_seconds: env_parse("PG_CONNECT_TIMEOUT", 10),
+            idle_timeout_seconds: env_parse("PG_IDLE_TIMEOUT", 30),
+        }
+    }
+}
+
+impl Default for PostgresConfig {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

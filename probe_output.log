@@ -1,2 +1,0 @@
-error: `cargo run` could not determine which binary to run. Use the `--bin` option to specify a binary, or the `default-run` manifest key.
-available binaries: analyzer, arb_bot, arb_checker, book_analyzer, impact_analyzer, integration_test, inventory_dashboard, monitor_demo, password, pnl_report, rebalancer_cli, router_demo

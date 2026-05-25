@@ -9,6 +9,7 @@ use inventory::tracker::{InventoryTracker, Venue};
 use pricing::amm::Token;
 use pricing::engine::PricingEngine;
 use rust_decimal_macros::dec;
+use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 
 const WETH_ADDR: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
@@ -62,11 +63,15 @@ async fn get_checker_with_mock_support()
     let exchange_client = get_test_client().await;
     let tracker = InventoryTracker::new(None);
 
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .unwrap();
+
     Ok(ArbChecker::new(
         pricing_engine,
         exchange_client,
         tracker,
-        PnLEngine::new(),
+        PnLEngine::new(pool),
     ))
 }
 

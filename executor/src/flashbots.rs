@@ -1,6 +1,7 @@
+use alloy_primitives::hex;
 use alloy_primitives::{B256, Bytes};
 use alloy_signer::SignerSync;
-use alloy_signer_wallet::LocalWallet;
+use alloy_signer_local::PrivateKeySigner;
 use anyhow::{Result, anyhow};
 use reqwest::{Client, header};
 use serde::{Deserialize, Serialize};
@@ -48,12 +49,12 @@ pub struct FlashbotsError {
 pub struct FlashbotsClient {
     client: Client,
     relay_url: String,
-    auth_wallet: LocalWallet,
+    auth_wallet: PrivateKeySigner,
 }
 
 impl FlashbotsClient {
     pub fn new(relay_url: &str, auth_private_key: &str) -> Result<Self> {
-        let auth_wallet: LocalWallet = auth_private_key.parse()?;
+        let auth_wallet: PrivateKeySigner = auth_private_key.parse()?;
         let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
         Ok(Self {

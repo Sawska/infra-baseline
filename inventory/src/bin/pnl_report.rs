@@ -1,3 +1,4 @@
+use arb_core::APP_CONFIG;
 use chrono::Utc;
 use colored::*;
 use exchange::client::{ExchangeClient, ExchangeType, OrderBook};
@@ -5,6 +6,7 @@ use exchange::config::ExchangeConfig;
 use inventory::pnl::{ArbRecord, PnLEngine, Side, TradeLeg};
 use inventory::tracker::Venue;
 use rust_decimal_macros::dec;
+use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
@@ -55,8 +57,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("❌ Bybit Stream Error: {}", e);
         }
     });
+    let pg_config = &APP_CONFIG.postgres;
 
-    let mut engine = PnLEngine::new();
+    let pool = PgPoolOptions::new()
+        .max_connections(pg_config.max_connections)
+        .min_connections(pg_config.min_connections)
+        .acquire_timeout(Duration::from_secs(pg_config.connect_timeout_seconds))
+        .idle_timeout(Duration::from_secs(pg_config.idle_timeout_seconds))
+        .connect(&pg_config.url)
+        .await
+        .unwrap();
+
+    let engine = PnLEngine::new(pool);
     let mut ob_binance: Option<OrderBook> = None;
     let mut ob_bybit: Option<OrderBook> = None;
     let mut trade_count = 0;
@@ -74,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         if let (Some(bin), Some(byb)) = (&ob_binance, &ob_bybit)
             && let Some(record) = check_arb(bin, byb, trade_count) {
-            engine.record(record);
+            engine.record(record).await.unwrap();
             trade_count += 1;
             needs_render = true;
         }
@@ -82,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     _ = ui_ticker.tick() => {
                         if needs_render || trade_count == 0 {
-                            render_dashboard(&engine, &ob_binance, &ob_bybit);
+                            render_dashboard(&engine, &ob_binance, &ob_bybit).await;
                             needs_render = false;
                         }
                     }
@@ -173,8 +185,12 @@ fn check_arb(bin: &OrderBook, byb: &OrderBook, id_counter: usize) -> Option<ArbR
     None
 }
 
-fn render_dashboard(engine: &PnLEngine, ob_bin: &Option<OrderBook>, ob_by: &Option<OrderBook>) {
-    let s = engine.summary();
+async fn render_dashboard(
+    engine: &PnLEngine,
+    ob_bin: &Option<OrderBook>,
+    ob_by: &Option<OrderBook>,
+) {
+    let s = engine.summary().await.unwrap();
 
     print!("{}[2J{}[1;1H", 27 as char, 27 as char);
 
@@ -216,7 +232,7 @@ fn render_dashboard(engine: &PnLEngine, ob_bin: &Option<OrderBook>, ob_by: &Opti
     println!("╠══════════════════════════════════════════════════════════════╣");
     println!("║  RECENT OPPORTUNITIES                                        ║");
 
-    let recent = engine.recent(5);
+    let recent = engine.recent(5).await.unwrap();
     for t in recent {
         let status = if t["is_win"] == "true" { "✅" } else { "❌" };
         let sign = if t["pnl"].starts_with('-') { "" } else { "+" };

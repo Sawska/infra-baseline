@@ -23,3 +23,5 @@ prometheus = "0.14.0"
 alloy-sol-types.workspace = true
 alloy-primitives = { version = "1.5.4", features = ["serde"] }
 fern = "0.7.1"
+alloy-signer = "1.5.2"
+alloy-signer-local.workspace = true

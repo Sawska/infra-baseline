@@ -10,13 +10,6 @@ authors = ["Alexander Korzh"]
 [workspace.dependencies]
 arb-core = { path = "./core" }
 arb-chain = { path = "./chain" }
-pricing = { path = "./pricing" }
-exchange = {path = "./exchange"}
-inventory = {path = "./inventory"}
-strategy = {path = "./strategy"}
-executor ={ path = "./executor" }
-
-alloy = { version = "1.5.2", features = ["full", "signer-local"] }
 alloy-primitives = { version = "1.5.4", features = ["serde"] }
 alloy-provider = { version = "1.5.2", features = ["reqwest"] }
 alloy-rpc-types = "1.5.2"

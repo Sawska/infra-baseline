@@ -1,5 +1,3 @@
-use crate::monitor::{MempoolMonitor, MonitorEvent};
-use crate::predictive_rebalancer::{PredictiveConfig, PredictiveRebalancer};
 use alloy_primitives::{Address as AlloyAddress, U256};
 use alloy_sol_types::{SolCall, sol};
 use anyhow::Result;
@@ -20,10 +18,13 @@ use executor::position_limits::{RiskLimits, RiskManager};
 use executor::safety::safety_check;
 use executor::telegram_alert::TelegramAlert;
 use executor::validator;
+use inventory::db;
+use inventory::pnl::{ArbRecord, PnLEngine, Side, TradeLeg};
+use inventory::predictive_rebalancer::{PredictiveConfig, PredictiveRebalancer};
 use inventory::tracker::{InventoryTracker, Venue};
 use log::{error, info, warn};
-use pnl::{ArbRecord, PnLEngine, Side, TradeLeg};
 use pricing::amm::Pool;
+use pricing::monitor::{MempoolMonitor, MonitorEvent};
 use rust_decimal::prelude::*;
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
@@ -114,7 +115,6 @@ struct ArbBot {
     pair_configs: HashMap<String, PerPairConfig>,
     gas_oracle: GasOracle,
     pred_rebalancer: Arc<PredictiveRebalancer>,
-    pools_map: HashMap<String, Pool>,
     pnl_engine: PnLEngine,
 }
 
@@ -180,8 +180,8 @@ impl ArbBot {
         let mut address_to_token = HashMap::new();
         for pool in pools_map.values() {
             let (t0, t1) = pool.tokens();
-            address_to_token.insert(t0.address, t0);
-            address_to_token.insert(t1.address, t1);
+            address_to_token.insert(t0.address.0, t0);
+            address_to_token.insert(t1.address.0, t1);
         }
 
         let weth_addr = config
@@ -195,7 +195,7 @@ impl ArbBot {
             PredictiveConfig::default(),
             address_to_token,
             pools_map.clone(),
-            weth_addr,
+            weth_addr.0,
         ));
 
         let executor = Executor::new(
@@ -266,7 +266,6 @@ impl ArbBot {
             pair_configs: config.pair_configs,
             gas_oracle: GasOracle::new(0.1, 0.1, 3_000.0),
             pred_rebalancer,
-            pools_map,
             pnl_engine,
         };
 
@@ -504,17 +503,15 @@ impl ArbBot {
         self.trading_active = true;
 
         let rebalancer_ref = self.pred_rebalancer.clone();
-        let executor_ref = self.executor.clone();
         tokio::spawn(async move {
             info!("Predictive Rebalancing mempool monitor started.");
             if let Some(ws_url) = APP_CONFIG.chain.ws_url.clone() {
-                let rebalancer_ref = self.pred_rebalancer.clone();
                 tokio::spawn(async move {
                     let monitor = MempoolMonitor::new(ws_url, move |event| {
                         let rebalancer = rebalancer_ref.clone();
                         async move {
-                            if let MonitorEvent::MempoolSwap(swap) = event {
-                                if let Some(plan) = rebalancer.on_monitor_event(&swap).await {
+                            if let MonitorEvent::MempoolSwap(_) = &event {
+                                if let Some(plan) = rebalancer.on_monitor_event(&event).await {
                                     if plan.should_execute && !plan.transfers.is_empty() {
                                         info!(
                                             "🚨 PREDICTIVE REBALANCE TRIGGERED! Reason: {}",
@@ -1114,7 +1111,7 @@ async fn main() -> Result<()> {
     pair_configs.insert("WETH/USDT".to_string(), PerPairConfig::eth_default());
 
     let database_url = {
-        let url = APP_CONFIG.runtime.database_url.clone();
+        let url = APP_CONFIG.postgres.url.clone();
         if url.is_empty() {
             panic!("DATABASE_URL must be set (e.g. postgres://user:pass@localhost/arb_db)");
         }

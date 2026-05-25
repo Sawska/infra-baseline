@@ -9,6 +9,7 @@ use inventory::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use sqlx::postgres::PgPoolOptions;
 use std::collections::HashMap;
 use std::fs;
 
@@ -397,31 +398,49 @@ fn test_pnl_bps_calculation() {
     assert_eq!(trade.net_pnl_bps(), expected_bps);
 }
 
-#[test]
-fn test_summary_win_rate() {
-    let mut engine = PnLEngine::new();
-    engine.record(create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.0)));
-    engine.record(create_mock_trade(dec!(2500.0), dec!(2500.0), dec!(1.0)));
+#[tokio::test]
+async fn test_summary_win_rate() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .unwrap();
 
-    let summary = engine.summary();
+    let engine = PnLEngine::new(pool);
+    let _ = engine
+        .record(create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.0)))
+        .await;
+    let _ = engine
+        .record(create_mock_trade(dec!(2500.0), dec!(2500.0), dec!(1.0)))
+        .await;
+
+    let summary = engine.summary().await.unwrap();
     assert_eq!(summary["total_trades"], "2");
     assert_eq!(summary["win_rate"], "50.0%");
 }
 
-#[test]
-fn test_summary_with_no_trades() {
-    let engine = PnLEngine::new();
-    let summary = engine.summary();
+#[tokio::test]
+async fn test_summary_with_no_trades() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .unwrap();
+
+    let engine = PnLEngine::new(pool);
+    let summary = engine.summary().await.unwrap();
     assert!(summary.is_empty());
 }
 
-#[test]
-fn test_export_csv_format() {
-    let mut engine = PnLEngine::new();
-    engine.record(create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.0)));
+#[tokio::test]
+async fn test_export_csv_format() {
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .unwrap();
+
+    let engine = PnLEngine::new(pool);
+    let _ = engine
+        .record(create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.0)))
+        .await;
 
     let file_path = "test_pnl.csv";
-    engine.export_csv(file_path).unwrap();
+    engine.export_csv(file_path).await.unwrap();
 
     let contents = fs::read_to_string(file_path).unwrap();
     assert!(contents.contains("id,timestamp,buy_venue,sell_venue,net_pnl,bps"));

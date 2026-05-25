@@ -9,9 +9,11 @@ use inventory::tracker::{InventoryTracker, Venue};
 use pricing::amm::Token;
 use pricing::engine::PricingEngine;
 use rust_decimal_macros::dec;
+use sqlx::postgres::PgPoolOptions;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::sync::Arc;
+use std::time::Duration;
 
 const WETH_ADDR: &str = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const USDT_ADDR: &str = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
@@ -84,7 +86,23 @@ async fn main() -> Result<()> {
         m
     });
 
-    let checker = ArbChecker::new(pricing_engine, exchange_client, tracker, PnLEngine::new());
+    let pg_config = &APP_CONFIG.postgres;
+
+    let pool = PgPoolOptions::new()
+        .max_connections(pg_config.max_connections)
+        .min_connections(pg_config.min_connections)
+        .acquire_timeout(Duration::from_secs(pg_config.connect_timeout_seconds))
+        .idle_timeout(Duration::from_secs(pg_config.idle_timeout_seconds))
+        .connect(&pg_config.url)
+        .await
+        .unwrap();
+
+    let checker = ArbChecker::new(
+        pricing_engine,
+        exchange_client,
+        tracker,
+        PnLEngine::new(pool),
+    );
 
     let eth = Token::new(
         Address::from_string(WETH_ADDR).unwrap(),
