@@ -130,11 +130,7 @@ impl PredictiveRebalancer {
 
     pub async fn pop_opportunity(&self, id: &str) -> Option<ArbOpportunity> {
         let mut q = self.opportunity_queue.write().await;
-        if let Some(pos) = q.iter().position(|o| o.id == id) {
-            Some(q.remove(pos))
-        } else {
-            None
-        }
+        q.iter().position(|o| o.id == id).map(|pos| q.remove(pos))
     }
 
     pub async fn on_monitor_event(&self, event: &MonitorEvent) -> Option<PrepositionPlan> {

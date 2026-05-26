@@ -510,15 +510,12 @@ impl ArbBot {
                     let monitor = MempoolMonitor::new(ws_url, move |event| {
                         let rebalancer = rebalancer_ref.clone();
                         async move {
-                            if let MonitorEvent::MempoolSwap(_) = &event {
-                                if let Some(plan) = rebalancer.on_monitor_event(&event).await {
-                                    if plan.should_execute && !plan.transfers.is_empty() {
-                                        info!(
-                                            "🚨 PREDICTIVE REBALANCE TRIGGERED! Reason: {}",
-                                            plan.reason
-                                        );
-                                    }
-                                }
+                            if let MonitorEvent::MempoolSwap(_) = &event
+                                && let Some(plan) = rebalancer.on_monitor_event(&event).await
+                                && plan.should_execute
+                                && !plan.transfers.is_empty()
+                            {
+                                info!("🚨 PREDICTIVE REBALANCE TRIGGERED! Reason: {}", plan.reason);
                             }
                         }
                     });
@@ -679,13 +676,13 @@ impl ArbBot {
             return Ok(());
         }
 
-        if let Some(eth_price) = self.generator.last_price("WETH/USDT") {
-            if let Some(price) = Decimal::from_f64(eth_price) {
-                self.pred_rebalancer.update_price("WETH", price).await;
-                self.pred_rebalancer
-                    .update_price("USDT", Decimal::ONE)
-                    .await;
-            }
+        if let Some(eth_price) = self.generator.last_price("WETH/USDT")
+            && let Some(price) = Decimal::from_f64(eth_price)
+        {
+            self.pred_rebalancer.update_price("WETH", price).await;
+            self.pred_rebalancer
+                .update_price("USDT", Decimal::ONE)
+                .await;
         }
 
         self.generator.clear_queue();

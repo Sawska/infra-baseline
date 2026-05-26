@@ -1014,7 +1014,7 @@ impl ExchangeClient {
                 "Coinbase JWT coordinate is larger than ES256 size".to_string(),
             ));
         }
-        target.extend(std::iter::repeat(0).take(32 - coord.len()));
+        target.extend(std::iter::repeat_n(0, 32 - coord.len()));
         target.extend_from_slice(coord);
         Ok(())
     }
