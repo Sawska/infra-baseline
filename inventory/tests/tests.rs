@@ -401,7 +401,8 @@ fn test_pnl_bps_calculation() {
 #[tokio::test]
 async fn test_summary_win_rate() {
     let pool = PgPoolOptions::new()
-        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .connect("postgres://fake:fake@localhost:5432/fake")
+        .await
         .unwrap();
 
     sqlx::migrate!("../migrations").run(&pool).await.unwrap();
@@ -422,7 +423,8 @@ async fn test_summary_win_rate() {
 #[tokio::test]
 async fn test_summary_with_no_trades() {
     let pool = PgPoolOptions::new()
-        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .connect("postgres://fake:fake@localhost:5432/fake")
+        .await
         .unwrap();
 
     sqlx::migrate!("../migrations").run(&pool).await.unwrap();
@@ -435,7 +437,8 @@ async fn test_summary_with_no_trades() {
 #[tokio::test]
 async fn test_export_csv_format() {
     let pool = PgPoolOptions::new()
-        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .connect("postgres://fake:fake@localhost:5432/fake")
+        .await
         .unwrap();
 
     sqlx::migrate!("../migrations").run(&pool).await.unwrap();
