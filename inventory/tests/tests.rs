@@ -404,10 +404,7 @@ async fn test_summary_win_rate() {
         .connect_lazy("postgres://fake:fake@localhost:5432/fake")
         .unwrap();
 
-    sqlx::migrate!("../migrations")
-        .run(&pool)
-        .await
-        .unwrap();
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
 
     let engine = PnLEngine::new(pool);
     let _ = engine
@@ -428,10 +425,7 @@ async fn test_summary_with_no_trades() {
         .connect_lazy("postgres://fake:fake@localhost:5432/fake")
         .unwrap();
 
-    sqlx::migrate!("../migrations")
-        .run(&pool)
-        .await
-        .unwrap();
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
 
     let engine = PnLEngine::new(pool);
     let summary = engine.summary().await.unwrap();
@@ -444,10 +438,7 @@ async fn test_export_csv_format() {
         .connect_lazy("postgres://fake:fake@localhost:5432/fake")
         .unwrap();
 
-    sqlx::migrate!("../migrations")
-        .run(&pool)
-        .await
-        .unwrap();
+    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
 
     let engine = PnLEngine::new(pool);
     let _ = engine
