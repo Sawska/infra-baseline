@@ -400,7 +400,9 @@ fn test_pnl_bps_calculation() {
 
 #[tokio::test]
 async fn test_summary_win_rate() {
-    let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .unwrap();
 
     let engine = PnLEngine::new(pool);
     let _ = engine
@@ -417,7 +419,9 @@ async fn test_summary_win_rate() {
 
 #[tokio::test]
 async fn test_summary_with_no_trades() {
-    let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .unwrap();
 
     let engine = PnLEngine::new(pool);
     let summary = engine.summary().await.unwrap();
@@ -426,7 +430,9 @@ async fn test_summary_with_no_trades() {
 
 #[tokio::test]
 async fn test_export_csv_format() {
-    let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let pool = PgPoolOptions::new()
+        .connect_lazy("postgres://fake:fake@localhost:5432/fake")
+        .unwrap();
 
     let engine = PnLEngine::new(pool);
     let _ = engine

@@ -7,10 +7,26 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  DATABASE_URL: postgres://fake:fake@localhost:5432/fake
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: fake
+          POSTGRES_PASSWORD: fake
+          POSTGRES_DB: fake
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +48,11 @@ jobs:
 
       - name: Build Workspace
         run: cargo build --verbose
+
+      - name: Run Database Migrations
+        run: |
+          cargo install sqlx-cli --no-default-features --features postgres
+          sqlx database setup
 
       - name: Run Anvil and Tests
         env:
@@ -61,4 +82,5 @@ jobs:
             fi
           done
 
+          # База готова, Anvil запущен — запускаем тесты всего воркспейса
           cargo test --workspace
