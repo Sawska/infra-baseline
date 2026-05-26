@@ -12,12 +12,17 @@ use rust_decimal_macros::dec;
 use std::collections::HashMap;
 use std::fs;
 
-fn create_mock_trade(buy_price: Decimal, sell_price: Decimal, amount: Decimal) -> ArbRecord {
+fn create_mock_trade(
+    id: &str,
+    buy_price: Decimal,
+    sell_price: Decimal,
+    amount: Decimal,
+) -> ArbRecord {
     let v_bin = Venue::Cex;
     let v_uni = Venue::Wallet;
 
     let buy = TradeLeg {
-        id: "b1".to_string(),
+        id: format!("{id}_buy"),
         timestamp: Utc::now(),
         venue: v_uni,
         symbol: "ETH/USDT".to_string(),
@@ -29,7 +34,7 @@ fn create_mock_trade(buy_price: Decimal, sell_price: Decimal, amount: Decimal) -
     };
 
     let sell = TradeLeg {
-        id: "s1".to_string(),
+        id: format!("{id}_sell"),
         timestamp: Utc::now(),
         venue: v_bin,
         symbol: "ETH/USDT".to_string(),
@@ -41,7 +46,7 @@ fn create_mock_trade(buy_price: Decimal, sell_price: Decimal, amount: Decimal) -
     };
 
     ArbRecord {
-        id: "arb1".to_string(),
+        id: id.to_string(),
         timestamp: Utc::now(),
         buy_leg: buy,
         sell_leg: sell,
@@ -380,19 +385,19 @@ fn test_planner_respects_min_withdrawal() {
 
 #[test]
 fn test_gross_pnl_calculation() {
-    let trade = create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.5));
+    let trade = create_mock_trade("arb1", dec!(2400.0), dec!(2500.0), dec!(1.5));
     assert_eq!(trade.gross_pnl(), dec!(150.0));
 }
 
 #[test]
 fn test_net_pnl_includes_all_fees() {
-    let trade = create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.5));
+    let trade = create_mock_trade("arb1", dec!(2400.0), dec!(2500.0), dec!(1.5));
     assert_eq!(trade.net_pnl(), dec!(147.35));
 }
 
 #[test]
 fn test_pnl_bps_calculation() {
-    let trade = create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.5));
+    let trade = create_mock_trade("arb1", dec!(2400.0), dec!(2500.0), dec!(1.5));
     let expected_bps = (dec!(147.35) / dec!(3600.0)) * dec!(10000);
     assert_eq!(trade.net_pnl_bps(), expected_bps);
 }
@@ -401,10 +406,20 @@ fn test_pnl_bps_calculation() {
 async fn test_summary_win_rate(pool: sqlx::PgPool) {
     let engine = PnLEngine::new(pool);
     let _ = engine
-        .record(create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.0)))
+        .record(create_mock_trade(
+            "arb1",
+            dec!(2400.0),
+            dec!(2500.0),
+            dec!(1.0),
+        ))
         .await;
     let _ = engine
-        .record(create_mock_trade(dec!(2500.0), dec!(2500.0), dec!(1.0)))
+        .record(create_mock_trade(
+            "arb2",
+            dec!(2500.0),
+            dec!(2500.0),
+            dec!(1.0),
+        ))
         .await;
 
     let summary = engine.summary().await.unwrap();
@@ -423,7 +438,12 @@ async fn test_summary_with_no_trades(pool: sqlx::PgPool) {
 async fn test_export_csv_format(pool: sqlx::PgPool) {
     let engine = PnLEngine::new(pool);
     let _ = engine
-        .record(create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.0)))
+        .record(create_mock_trade(
+            "arb1",
+            dec!(2400.0),
+            dec!(2500.0),
+            dec!(1.0),
+        ))
         .await;
 
     let file_path = "test_pnl.csv";
