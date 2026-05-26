@@ -22,6 +22,6 @@ colored.workspace = true
 csv ={ version = "1.4.0"}
 tokio-tungstenite = "0.28.0"
 url.workspace = true
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "rust_decimal", "chrono"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "migrate", "rust_decimal", "chrono"] }
 [dev-dependencies]
 approx ={ version = "0.5.1"}

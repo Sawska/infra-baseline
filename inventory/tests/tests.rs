@@ -9,7 +9,6 @@ use inventory::{
 };
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
-use sqlx::postgres::PgPoolOptions;
 use std::collections::HashMap;
 use std::fs;
 
@@ -398,15 +397,8 @@ fn test_pnl_bps_calculation() {
     assert_eq!(trade.net_pnl_bps(), expected_bps);
 }
 
-#[tokio::test]
-async fn test_summary_win_rate() {
-    let pool = PgPoolOptions::new()
-        .connect("postgres://fake:fake@localhost:5432/fake")
-        .await
-        .unwrap();
-
-    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
-
+#[sqlx::test(migrations = "../migrations")]
+async fn test_summary_win_rate(pool: sqlx::PgPool) {
     let engine = PnLEngine::new(pool);
     let _ = engine
         .record(create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.0)))
@@ -420,29 +412,15 @@ async fn test_summary_win_rate() {
     assert_eq!(summary["win_rate"], "50.0%");
 }
 
-#[tokio::test]
-async fn test_summary_with_no_trades() {
-    let pool = PgPoolOptions::new()
-        .connect("postgres://fake:fake@localhost:5432/fake")
-        .await
-        .unwrap();
-
-    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
-
+#[sqlx::test(migrations = "../migrations")]
+async fn test_summary_with_no_trades(pool: sqlx::PgPool) {
     let engine = PnLEngine::new(pool);
     let summary = engine.summary().await.unwrap();
     assert!(summary.is_empty());
 }
 
-#[tokio::test]
-async fn test_export_csv_format() {
-    let pool = PgPoolOptions::new()
-        .connect("postgres://fake:fake@localhost:5432/fake")
-        .await
-        .unwrap();
-
-    sqlx::migrate!("../migrations").run(&pool).await.unwrap();
-
+#[sqlx::test(migrations = "../migrations")]
+async fn test_export_csv_format(pool: sqlx::PgPool) {
     let engine = PnLEngine::new(pool);
     let _ = engine
         .record(create_mock_trade(dec!(2400.0), dec!(2500.0), dec!(1.0)))
