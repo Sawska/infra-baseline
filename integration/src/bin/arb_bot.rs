@@ -10,14 +10,15 @@ use chrono::Utc;
 use exchange::client::{ExchangeClient, ExchangeType};
 use exchange::config::ExchangeConfig;
 use executor::engine::{Executor, ExecutorConfig, ExecutorState};
-use executor::gas_oracle::{GasOracle, gas_units as gas_units_table, safety_check_with_gas};
+use executor::gas_oracle::{GasOracle, safety_check_with_gas};
 use executor::kill_switch::AutoKillSwitch;
 use executor::metrics::gather_metrics;
 use executor::monitoring;
-use executor::position_limits::{RiskLimits, RiskManager};
+use executor::position_limits::RiskManager;
 use executor::safety::safety_check;
 use executor::telegram_alert::TelegramAlert;
 use executor::validator;
+use integration::strategy_config::{PairStrategy, SnapshotConfig, StrategyConfig};
 use inventory::db;
 use inventory::pnl::{ArbRecord, PnLEngine, Side, TradeLeg};
 use inventory::predictive_rebalancer::{PredictiveConfig, PredictiveRebalancer};
@@ -32,7 +33,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use strategy::fees::FeeStructure;
 use strategy::generator::{GeneratorConfig, PairMetadata, SignalGenerator};
-use strategy::scorer::{ScorerConfig, SignalScorer};
+use strategy::scorer::SignalScorer;
 use strategy::signal::Direction;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
@@ -41,6 +42,7 @@ use warp::Filter;
 const KILL_SWITCH_FILE: &str = "/tmp/arb_bot_kill";
 const HEARTBEAT_FILE: &str = "/tmp/arb_bot_heartbeat";
 const PNL_CHART_FILE: &str = "pnl_chart.html";
+const STABLE_ASSETS: &[&str] = &["USDT", "USDC", "USD", "DAI", "BUSD", "TUSD"];
 
 sol! {
     function balanceOf(address account) external view returns (uint256);
@@ -60,32 +62,23 @@ pub struct PerPairConfig {
 }
 
 impl PerPairConfig {
-    pub fn pepe_default() -> Self {
+    /// Build the runtime per-pair config from a `strategy.yml` pair entry.
+    pub fn from_strategy(p: &PairStrategy) -> Self {
         Self {
-            trade_size: 1_250_000.0,
-            min_spread_bps: 130.0,
-            min_profit_usd: 0.01,
-            fee_structure: FeeStructure {
-                cex_taker_bps: 10.0,
-                dex_swap_bps: 1.0,
-                gas_cost_usd: 0.07,
-            },
-            gas_units: gas_units_table::TWO_HOP_V3,
+            trade_size: p.trade_size,
+            min_spread_bps: p.min_spread_bps,
+            min_profit_usd: p.min_profit_usd,
+            fee_structure: p.fees.clone(),
+            gas_units: p.gas_units.units(),
         }
     }
 
+    pub fn pepe_default() -> Self {
+        Self::from_strategy(&PairStrategy::pepe_default())
+    }
+
     pub fn eth_default() -> Self {
-        Self {
-            trade_size: 0.0026,
-            min_spread_bps: 20.0,
-            min_profit_usd: 0.02,
-            fee_structure: FeeStructure {
-                cex_taker_bps: 10.0,
-                dex_swap_bps: 5.0,
-                gas_cost_usd: 0.02,
-            },
-            gas_units: gas_units_table::UNISWAP_V3_SWAP,
-        }
+        Self::from_strategy(&PairStrategy::eth_default())
     }
 }
 
@@ -116,6 +109,8 @@ struct ArbBot {
     gas_oracle: GasOracle,
     pred_rebalancer: Arc<PredictiveRebalancer>,
     pnl_engine: PnLEngine,
+    generator_base: GeneratorConfig,
+    balance_snapshot: SnapshotConfig,
 }
 
 impl ArbBot {
@@ -140,15 +135,12 @@ impl ArbBot {
         let wallet = Arc::new(WalletManager::from_private_key(private_key)?);
         let shared_inventory = Arc::new(Mutex::new(InventoryTracker::new(Some(&wallet))));
 
+        let generator_base = config.strategy.generator.clone();
         let mut generator = SignalGenerator::new(
             exchange.clone(),
             shared_inventory.clone(),
             FeeStructure::default(),
-            GeneratorConfig {
-                min_spread_bps: 50.0,
-                min_profit_usd: 0.01,
-                ..Default::default()
-            },
+            generator_base.clone(),
         );
 
         let mut pools_map: HashMap<String, Pool> = HashMap::new();
@@ -175,7 +167,7 @@ impl ArbBot {
             pools_map.insert(pair.clone(), pool);
         }
 
-        let scorer = SignalScorer::new(Some(ScorerConfig::default()));
+        let scorer = SignalScorer::new(Some(config.strategy.scorer.clone()));
 
         let mut address_to_token = HashMap::new();
         for pool in pools_map.values() {
@@ -215,19 +207,16 @@ impl ArbBot {
             config.webhook_url,
         );
 
-        let risk_limits = RiskLimits {
-            max_trade_usd: 10.0,
-            max_trade_pct: 0.20,
-            max_position_per_token: 10.0,
-            max_open_positions: 1,
-            max_drawdown_pct: 0.20,
-            max_daily_loss: 10.0,
-            max_trades_per_hour: 20,
-            consecutive_loss_limit: 3,
-            max_loss_per_trade: 5.0,
-        };
+        let risk_limits = config.strategy.risk_limits.clone();
 
-        let risk_manager = RiskManager::new(risk_limits, 71.00);
+        // Seed capital with the configured value (or fallback); when capital derivation
+        // from live balances is requested, this is overwritten after balances sync below.
+        let seed_capital = config
+            .strategy
+            .capital
+            .initial_capital_usd
+            .unwrap_or(config.strategy.capital.fallback_capital_usd);
+        let risk_manager = RiskManager::new(risk_limits, seed_capital);
         let validator = validator::PreTradeValidator::default();
         let kill_switch = AutoKillSwitch::new();
         let telegram = Arc::new(TelegramAlert::new(
@@ -240,7 +229,11 @@ impl ArbBot {
         let pnl_engine = PnLEngine::new(pg_pool);
         info!("PostgreSQL PnL engine connected.");
 
-        let bot = Self {
+        let gas_cfg = config.strategy.gas.clone();
+        let capital_cfg = config.strategy.capital.clone();
+        let snapshot_cfg = config.strategy.balance_snapshot.clone();
+
+        let mut bot = Self {
             shared_inventory,
             exchange,
             generator,
@@ -264,13 +257,35 @@ impl ArbBot {
             error_timestamps: VecDeque::new(),
             daily_trades: Vec::new(),
             pair_configs: config.pair_configs,
-            gas_oracle: GasOracle::new(0.1, 0.1, 3_000.0),
+            gas_oracle: GasOracle::new(gas_cfg.initial_gwei, gas_cfg.alpha, gas_cfg.eth_price_usd),
             pred_rebalancer,
             pnl_engine,
+            generator_base,
+            balance_snapshot: snapshot_cfg,
         };
 
         bot.sync_binance_balances().await?;
         bot.sync_wallet_balances().await?;
+
+        // Live balance fetching: derive starting capital from real equity unless a fixed
+        // value was configured. Falls back to the configured fallback if equity is unusable.
+        if capital_cfg.initial_capital_usd.is_none() {
+            let (cex_usd, wallet_usd, total_usd, _) = bot.compute_equity_breakdown().await;
+            if total_usd > 0.0 {
+                info!(
+                    "Live equity: ${:.2} (CEX ${:.2} + wallet ${:.2}) — using as starting capital.",
+                    total_usd, cex_usd, wallet_usd
+                );
+                bot.risk_manager.set_capital(total_usd);
+            } else {
+                warn!(
+                    "Live equity came back as $0.00; falling back to configured capital ${:.2}.",
+                    capital_cfg.fallback_capital_usd
+                );
+                bot.risk_manager
+                    .set_capital(capital_cfg.fallback_capital_usd);
+            }
+        }
 
         let state_payload = serde_json::json!({
             "trading_active": bot.trading_active,
@@ -498,6 +513,118 @@ impl ArbBot {
         Ok(())
     }
 
+    fn is_stable(asset: &str) -> bool {
+        STABLE_ASSETS.contains(&asset)
+    }
+
+    /// Distinct assets that contribute to account equity: every pair's base/quote plus ETH.
+    fn equity_assets(&self) -> Vec<String> {
+        let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        set.insert("ETH".to_string());
+        for pair in &self.pairs {
+            for part in pair.split('/') {
+                if !part.is_empty() {
+                    set.insert(part.to_string());
+                }
+            }
+        }
+        set.into_iter().collect()
+    }
+
+    /// USD price for an asset: stables are $1; everything else is the live CEX mid for
+    /// `<asset>/USDT`. Returns 0.0 when no price is available.
+    async fn asset_price_usd(&self, asset: &str) -> f64 {
+        if Self::is_stable(asset) {
+            return 1.0;
+        }
+        let symbol = format!("{}/USDT", asset);
+        match self.exchange.fetch_order_book(&symbol, 5).await {
+            Ok(ob) => ob.mid_price.to_f64().unwrap_or(0.0),
+            Err(e) => {
+                warn!("[Equity] price unavailable for {}: {}", symbol, e);
+                0.0
+            }
+        }
+    }
+
+    /// Value live balances (CEX + on-chain wallet) in USD.
+    /// Returns `(cex_usd, wallet_usd, total_usd, breakdown_json)`.
+    async fn compute_equity_breakdown(&self) -> (f64, f64, f64, serde_json::Value) {
+        let assets = self.equity_assets();
+        let mut prices: HashMap<String, f64> = HashMap::new();
+        for asset in &assets {
+            let price = self.asset_price_usd(asset).await;
+            prices.insert(asset.clone(), price);
+        }
+
+        let inventory = self.shared_inventory.lock().await;
+        let mut cex_usd = 0.0;
+        let mut wallet_usd = 0.0;
+        let mut breakdown = serde_json::Map::new();
+
+        for asset in &assets {
+            let price = *prices.get(asset).unwrap_or(&0.0);
+            let cex_amt = inventory
+                .get_balance(Venue::Cex, asset)
+                .to_f64()
+                .unwrap_or(0.0);
+            let wallet_amt = inventory
+                .get_balance(Venue::Wallet, asset)
+                .to_f64()
+                .unwrap_or(0.0);
+            let cex_val = cex_amt * price;
+            let wallet_val = wallet_amt * price;
+            cex_usd += cex_val;
+            wallet_usd += wallet_val;
+            if cex_amt != 0.0 || wallet_amt != 0.0 {
+                breakdown.insert(
+                    asset.clone(),
+                    json!({
+                        "price_usd": price,
+                        "cex_amount": cex_amt,
+                        "wallet_amount": wallet_amt,
+                        "cex_usd": cex_val,
+                        "wallet_usd": wallet_val,
+                    }),
+                );
+            }
+        }
+
+        let total_usd = cex_usd + wallet_usd;
+        (
+            cex_usd,
+            wallet_usd,
+            total_usd,
+            serde_json::Value::Object(breakdown),
+        )
+    }
+
+    /// Compute and persist a balance snapshot to the database, when snapshotting is enabled.
+    async fn record_balance_snapshot(&self) {
+        if !self.balance_snapshot.enabled {
+            return;
+        }
+        let (cex_usd, wallet_usd, total_usd, breakdown) = self.compute_equity_breakdown().await;
+        let to_dec = |v: f64| Decimal::from_f64(v).unwrap_or(Decimal::ZERO);
+        match self
+            .pnl_engine
+            .record_balance_snapshot(
+                Utc::now(),
+                to_dec(cex_usd),
+                to_dec(wallet_usd),
+                to_dec(total_usd),
+                &breakdown.to_string(),
+            )
+            .await
+        {
+            Ok(()) => info!(
+                "Balance snapshot recorded: equity ${:.2} (CEX ${:.2} + wallet ${:.2})",
+                total_usd, cex_usd, wallet_usd
+            ),
+            Err(e) => warn!("Failed to persist balance snapshot: {}", e),
+        }
+    }
+
     pub async fn run(&mut self) {
         self.running = true;
         self.trading_active = true;
@@ -534,9 +661,13 @@ impl ArbBot {
         info!("Bot starting...");
         self.telegram.send("🚀 Arb Bot Started", false).await;
 
+        // Capture a starting equity snapshot before the trading loop begins.
+        self.record_balance_snapshot().await;
+
         let mut last_reset = Instant::now();
         let mut last_health_check = Instant::now();
         let mut last_kill_switch_check = Instant::now();
+        let mut last_balance_snapshot = Instant::now();
 
         while self.running {
             self.update_heartbeat();
@@ -581,6 +712,13 @@ impl ArbBot {
                     self.trading_active = true;
                 }
                 last_kill_switch_check = Instant::now();
+            }
+
+            if self.balance_snapshot.enabled
+                && last_balance_snapshot.elapsed().as_secs() >= self.balance_snapshot.interval_secs
+            {
+                self.record_balance_snapshot().await;
+                last_balance_snapshot = Instant::now();
             }
 
             if last_reset.elapsed().as_secs() >= 86400 {
@@ -694,11 +832,10 @@ impl ArbBot {
                 .cloned()
                 .unwrap_or_else(PerPairConfig::pepe_default);
 
-            self.generator.update_config(GeneratorConfig {
-                min_spread_bps: pair_cfg.min_spread_bps,
-                min_profit_usd: pair_cfg.min_profit_usd,
-                ..Default::default()
-            });
+            let mut gen_cfg = self.generator_base.clone();
+            gen_cfg.min_spread_bps = pair_cfg.min_spread_bps;
+            gen_cfg.min_profit_usd = pair_cfg.min_profit_usd;
+            self.generator.update_config(gen_cfg);
 
             self.generator
                 .queue_candidate(pair, pair_cfg.trade_size)
@@ -1049,6 +1186,7 @@ struct BotConfig {
     token_addresses: HashMap<String, Address>,
     pair_configs: HashMap<String, PerPairConfig>,
     database_url: String,
+    strategy: StrategyConfig,
 }
 
 #[tokio::main]
@@ -1066,6 +1204,9 @@ async fn main() -> Result<()> {
     });
 
     info!("=== Configuring Bot for Multiple Pairs (PEPE & ETH) ===");
+
+    let strategy = StrategyConfig::load()?;
+    let pairs = vec!["PEPE/USDT".to_string(), "WETH/USDT".to_string()];
 
     let mut token_addresses = HashMap::new();
     token_addresses.insert(
@@ -1103,9 +1244,26 @@ async fn main() -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("ARBITRUM_WETH_USDT_POOL is not configured"))?,
     );
 
+    // Per-pair tuning comes from strategy.yml (keyed by symbol); fall back to built-in
+    // defaults for any pair not present in the config file.
     let mut pair_configs = HashMap::new();
-    pair_configs.insert("PEPE/USDT".to_string(), PerPairConfig::pepe_default());
-    pair_configs.insert("WETH/USDT".to_string(), PerPairConfig::eth_default());
+    for symbol in &pairs {
+        let cfg = strategy
+            .pair(symbol)
+            .map(PerPairConfig::from_strategy)
+            .unwrap_or_else(|| {
+                warn!(
+                    "No strategy.yml entry for {} — using built-in defaults.",
+                    symbol
+                );
+                if symbol == "PEPE/USDT" {
+                    PerPairConfig::pepe_default()
+                } else {
+                    PerPairConfig::eth_default()
+                }
+            });
+        pair_configs.insert(symbol.clone(), cfg);
+    }
 
     let database_url = {
         let url = APP_CONFIG.postgres.url.clone();
@@ -1116,7 +1274,7 @@ async fn main() -> Result<()> {
     };
 
     let config = BotConfig {
-        pairs: vec!["PEPE/USDT".to_string(), "WETH/USDT".to_string()],
+        pairs,
         simulation: APP_CONFIG.runtime.simulation,
         dry_run: APP_CONFIG.runtime.dry_run,
         webhook_url: None,
@@ -1125,6 +1283,7 @@ async fn main() -> Result<()> {
         token_addresses,
         pair_configs,
         database_url,
+        strategy,
     };
 
     match ArbBot::new(config).await {

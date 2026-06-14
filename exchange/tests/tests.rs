@@ -57,17 +57,9 @@ async fn get_test_client(exchange: ExchangeType) -> ExchangeClient {
             "https://api-testnet.bybit.com".into(),
             "wss://stream-testnet.bybit.com/v5/public".into(),
         ),
-        ExchangeType::Okx => (
-            "https://www.okx.com".into(),
-            "wss://ws.okx.com:8443/ws/v5/public".into(),
-        ),
         ExchangeType::Coinbase => (
             "https://api.coinbase.com/api/v3/brokerage".into(),
             "wss://advanced-trade-ws.coinbase.com".into(),
-        ),
-        ExchangeType::Kraken => (
-            "https://api.kraken.com".into(),
-            "wss://ws.kraken.com/v2".into(),
         ),
     };
 

@@ -112,6 +112,55 @@ impl PnLEngine {
         Ok(())
     }
 
+    /// Persist a point-in-time snapshot of account equity (live CEX + on-chain wallet
+    /// balances valued in USD) so the equity curve can be charted alongside realised PnL.
+    pub async fn record_balance_snapshot(
+        &self,
+        timestamp: DateTime<Utc>,
+        cex_usd: Decimal,
+        wallet_usd: Decimal,
+        total_usd: Decimal,
+        breakdown_json: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO balance_snapshots (timestamp, cex_usd, wallet_usd, total_usd, breakdown)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(timestamp)
+        .bind(cex_usd)
+        .bind(wallet_usd)
+        .bind(total_usd)
+        .bind(breakdown_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Most recent equity snapshot, if any: `(timestamp, cex_usd, wallet_usd, total_usd)`.
+    pub async fn latest_balance_snapshot(
+        &self,
+    ) -> Result<Option<(DateTime<Utc>, Decimal, Decimal, Decimal)>, sqlx::Error> {
+        let row = sqlx::query(
+            "SELECT timestamp, cex_usd, wallet_usd, total_usd \
+             FROM balance_snapshots ORDER BY timestamp DESC LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(row) => Ok(Some((
+                row.try_get("timestamp")?,
+                row.try_get("cex_usd")?,
+                row.try_get("wallet_usd")?,
+                row.try_get("total_usd")?,
+            ))),
+            None => Ok(None),
+        }
+    }
+
     pub async fn fetch_all_trades(&self) -> Result<Vec<ArbRecord>, sqlx::Error> {
         let rows = sqlx::query("SELECT * FROM arb_trades ORDER BY timestamp ASC")
             .fetch_all(&self.pool)

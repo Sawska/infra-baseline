@@ -159,6 +159,14 @@ impl RiskManager {
         );
     }
 
+    /// Reset the capital baseline (initial, current and peak) to a freshly observed value,
+    /// e.g. equity derived from live balances at startup.
+    pub fn set_capital(&mut self, capital: f64) {
+        self.initial_capital = capital;
+        self.current_capital = capital;
+        self.peak_capital = capital;
+    }
+
     pub fn reset_daily(&mut self) {
         self.daily_pnl = 0.0;
         self.trades_this_hour = 0;

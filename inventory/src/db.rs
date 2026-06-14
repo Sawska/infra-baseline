@@ -28,6 +28,16 @@ pub async fn init_db(database_url: &str) -> Result<PgPool, Box<dyn Error>> {
             bps             NUMERIC     NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_arb_trades_timestamp ON arb_trades (timestamp);
+
+        CREATE TABLE IF NOT EXISTS balance_snapshots (
+            id          BIGSERIAL   PRIMARY KEY,
+            timestamp   TIMESTAMPTZ NOT NULL,
+            cex_usd     NUMERIC     NOT NULL,
+            wallet_usd  NUMERIC     NOT NULL,
+            total_usd   NUMERIC     NOT NULL,
+            breakdown   TEXT        NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_balance_snapshots_timestamp ON balance_snapshots (timestamp);
         "#,
     )
     .execute(&pool)
