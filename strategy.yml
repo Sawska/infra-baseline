@@ -1,0 +1,82 @@
+# =============================================================================
+# Strategy configuration
+#
+# Every tunable knob the bot used to carry as a hard-coded literal now lives here.
+# Loaded at startup from this file (override the path with STRATEGY_CONFIG_PATH).
+#   - file missing            -> built-in defaults are used
+#   - file present but invalid -> the bot refuses to start (fail fast)
+#
+# Per-pair `min_spread_bps` / `min_profit_usd` override the global `generator`
+# values; the remaining `generator` fields apply to every pair.
+# =============================================================================
+
+# Starting capital used by the risk manager.
+capital:
+  # Fixed USD starting capital. Leave as `null` to derive it from live CEX +
+  # on-chain wallet balances at startup (live balance fetching).
+  initial_capital_usd: null
+  # Used only if live equity comes back as zero/unavailable.
+  fallback_capital_usd: 71.0
+
+# Global signal-generation parameters.
+generator:
+  min_spread_bps: 50.0       # min raw spread to consider (per-pair value overrides this)
+  min_profit_usd: 0.01       # min net profit to emit a signal (per-pair value overrides this)
+  max_position_usd: 10000.0  # hard cap on a single position's notional
+  signal_ttl_seconds: 5.0    # how long a generated signal stays valid
+  cooldown_seconds: 2.0      # min gap between signals for the same pair
+
+# Signal scoring weights (must reflect relative importance; clamped to 0..100).
+scorer:
+  spread_weight: 0.4
+  liquidity_weight: 0.2
+  inventory_weight: 0.2
+  history_weight: 0.2
+  excellent_spread_bps: 100.0
+  min_spread_bps: 30.0
+
+# Risk limits enforced before every trade.
+risk_limits:
+  max_trade_usd: 10.0
+  max_trade_pct: 0.20            # max fraction of capital per trade
+  max_position_per_token: 10.0
+  max_open_positions: 1
+  max_drawdown_pct: 0.20
+  max_daily_loss: 10.0
+  max_trades_per_hour: 20
+  consecutive_loss_limit: 3
+  max_loss_per_trade: 5.0
+
+# Gas oracle seed values (refined live from chain base fee / ETH price while running).
+gas:
+  initial_gwei: 0.1
+  alpha: 0.1                 # EWMA smoothing factor (0..1)
+  eth_price_usd: 3000.0
+
+# Periodic equity (CEX + wallet, valued in USD) snapshots persisted to Postgres.
+balance_snapshot:
+  enabled: true
+  interval_secs: 60
+
+# Per-pair tuning. `gas_units` is one of:
+#   erc20_transfer | uniswap_v2_swap | uniswap_v3_swap | two_hop_v3 | flash_loan_arb
+pairs:
+  - symbol: "PEPE/USDT"
+    trade_size: 1250000.0
+    min_spread_bps: 130.0
+    min_profit_usd: 0.01
+    gas_units: two_hop_v3
+    fees:
+      cex_taker_bps: 10.0
+      dex_swap_bps: 1.0
+      gas_cost_usd: 0.07
+
+  - symbol: "WETH/USDT"
+    trade_size: 0.0026
+    min_spread_bps: 20.0
+    min_profit_usd: 0.02
+    gas_units: uniswap_v3_swap
+    fees:
+      cex_taker_bps: 10.0
+      dex_swap_bps: 5.0
+      gas_cost_usd: 0.02

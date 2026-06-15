@@ -104,22 +104,10 @@ fn venue_for(
             "BYBIT_TESTNET_SECRET",
             None,
         ),
-        (ExchangeType::Okx, _) => (
-            &app.exchange.okx,
-            "OKX_API_KEY",
-            "OKX_SECRET",
-            Some("OKX_PASSPHRASE"),
-        ),
         (ExchangeType::Coinbase, _) => (
             &app.exchange.coinbase,
             "COINBASE_API_KEY",
             "COINBASE_SECRET",
-            None,
-        ),
-        (ExchangeType::Kraken, _) => (
-            &app.exchange.kraken,
-            "KRAKEN_API_KEY",
-            "KRAKEN_SECRET",
             None,
         ),
     }

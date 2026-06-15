@@ -1,14 +1,13 @@
 use arb_core::error::ArbError;
 use arb_core::types::TokenAmount;
 use base64::{Engine as _, engine::general_purpose};
-use chrono::{SecondsFormat, Utc};
 use futures_util::{SinkExt, StreamExt};
 use hmac::{Hmac, Mac};
 use openssl::{ecdsa::EcdsaSig, hash::MessageDigest, pkey::PKey, sign::Signer};
 use reqwest::Client;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256, Sha512};
+use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -17,7 +16,6 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use url::Url;
 
 type HmacSha256 = Hmac<Sha256>;
-type HmacSha512 = Hmac<Sha512>;
 
 pub struct RateLimiter {
     capacity: f64,
@@ -119,9 +117,7 @@ pub struct OrderResult {
 pub enum ExchangeType {
     Binance,
     Bybit,
-    Okx,
     Coinbase,
-    Kraken,
 }
 
 pub struct ExchangeClient {
@@ -152,20 +148,10 @@ impl ExchangeClient {
                 config.binance_ws_url.clone(),
                 600,
             ),
-            ExchangeType::Okx => (
-                config.binance_http_url.clone(),
-                config.binance_ws_url.clone(),
-                600,
-            ),
             ExchangeType::Coinbase => (
                 config.binance_http_url.clone(),
                 config.binance_ws_url.clone(),
                 600,
-            ),
-            ExchangeType::Kraken => (
-                config.binance_http_url.clone(),
-                config.binance_ws_url.clone(),
-                900,
             ),
         };
 
@@ -217,12 +203,8 @@ impl ExchangeClient {
         self.rate_limiter.wait(weight).await;
 
         match self.exchange_type {
-            ExchangeType::Okx => return self.okx_signed_request(method, endpoint, params).await,
             ExchangeType::Coinbase => {
                 return self.coinbase_signed_request(method, endpoint, params).await;
-            }
-            ExchangeType::Kraken => {
-                return self.kraken_signed_request(method, endpoint, params).await;
             }
             ExchangeType::Binance | ExchangeType::Bybit => {}
         }
@@ -264,7 +246,7 @@ impl ExchangeClient {
                 let signature = self.sign_query(&signature_payload);
                 (url, body_data, Some(signature))
             }
-            ExchangeType::Okx | ExchangeType::Coinbase | ExchangeType::Kraken => unreachable!(),
+            ExchangeType::Coinbase => unreachable!(),
         };
 
         let mut rb = self.request_builder(method, &url)?;
@@ -302,60 +284,6 @@ impl ExchangeClient {
         if self.exchange_type == ExchangeType::Bybit && data["retCode"].as_i64().unwrap_or(0) != 0 {
             return Err(ArbError::SerializationError(format!(
                 "Bybit private API error: {}",
-                data
-            )));
-        }
-        Ok(data)
-    }
-
-    async fn okx_signed_request(
-        &self,
-        method: &str,
-        endpoint: &str,
-        params: &str,
-    ) -> Result<serde_json::Value, ArbError> {
-        let request_path = if method == "GET" && !params.is_empty() {
-            format!("{}?{}", endpoint, params)
-        } else {
-            endpoint.to_string()
-        };
-        let body = if method == "GET" { "" } else { params };
-        let timestamp = Self::okx_timestamp();
-        let signature = self.sign_okx(&timestamp, method, &request_path, body)?;
-        let url = format!("{}{}", self.base_url, request_path);
-
-        let mut rb = self
-            .request_builder(method, &url)?
-            .header("OK-ACCESS-KEY", self.config.api_key.trim())
-            .header("OK-ACCESS-SIGN", signature)
-            .header("OK-ACCESS-TIMESTAMP", timestamp)
-            .header(
-                "OK-ACCESS-PASSPHRASE",
-                self.config.passphrase.as_deref().unwrap_or(""),
-            )
-            .header("Accept", "application/json");
-
-        if self.config.is_sandbox {
-            rb = rb.header("x-simulated-trading", "1");
-        }
-
-        if method != "GET" {
-            rb = rb
-                .header("Content-Type", "application/json")
-                .body(body.to_string());
-        }
-
-        let data = self
-            .parse_http_response(
-                rb.send()
-                    .await
-                    .map_err(|e| ArbError::SerializationError(e.to_string()))?,
-            )
-            .await?;
-
-        if data["code"].as_str().unwrap_or("0") != "0" {
-            return Err(ArbError::SerializationError(format!(
-                "OKX private API error: {}",
                 data
             )));
         }
@@ -409,52 +337,6 @@ impl ExchangeClient {
         Ok(data)
     }
 
-    async fn kraken_signed_request(
-        &self,
-        method: &str,
-        endpoint: &str,
-        params: &str,
-    ) -> Result<serde_json::Value, ArbError> {
-        if method != "POST" {
-            return Err(ArbError::SerializationError(
-                "Kraken private REST endpoints require POST".to_string(),
-            ));
-        }
-
-        let nonce = Self::get_timestamp().to_string();
-        let body = if params.is_empty() {
-            format!("nonce={}", nonce)
-        } else {
-            format!("nonce={}&{}", nonce, params)
-        };
-        let signature = self.sign_kraken(endpoint, &nonce, &body)?;
-        let url = format!("{}{}", self.base_url, endpoint);
-
-        let data = self
-            .parse_http_response(
-                self.http_client
-                    .post(&url)
-                    .header("API-Key", self.config.api_key.trim())
-                    .header("API-Sign", signature)
-                    .header("Content-Type", "application/x-www-form-urlencoded")
-                    .body(body)
-                    .send()
-                    .await
-                    .map_err(|e| ArbError::SerializationError(e.to_string()))?,
-            )
-            .await?;
-
-        if let Some(errors) = data["error"].as_array()
-            && !errors.is_empty()
-        {
-            return Err(ArbError::SerializationError(format!(
-                "Kraken private API error: {}",
-                data
-            )));
-        }
-        Ok(data)
-    }
-
     pub async fn fetch_balance(&self) -> Result<HashMap<String, Balance>, ArbError> {
         let (method, endpoint, params) = match self.exchange_type {
             ExchangeType::Binance => ("GET", "/api/v3/account", "".to_string()),
@@ -463,9 +345,7 @@ impl ExchangeClient {
                 "/v5/account/wallet-balance",
                 "accountType=UNIFIED".to_string(),
             ),
-            ExchangeType::Okx => ("GET", "/api/v5/account/balance", "".to_string()),
             ExchangeType::Coinbase => ("GET", "/accounts", "".to_string()),
-            ExchangeType::Kraken => ("POST", "/0/private/Balance", "".to_string()),
         };
 
         let data = self
@@ -512,35 +392,6 @@ impl ExchangeClient {
                     }
                 }
             }
-            ExchangeType::Okx => {
-                if let Some(assets) = data["data"][0]["details"].as_array() {
-                    for asset in assets {
-                        let symbol = asset["ccy"].as_str().unwrap_or("").to_string();
-                        let free_str = asset["availBal"].as_str().unwrap_or("0");
-                        let locked_str = asset["frozenBal"].as_str().unwrap_or("0");
-                        let total_str = asset["cashBal"]
-                            .as_str()
-                            .or(asset["eq"].as_str())
-                            .unwrap_or(free_str);
-
-                        let free = TokenAmount::from_human(free_str, 8, Some(symbol.clone()))?;
-                        let locked = TokenAmount::from_human(locked_str, 8, Some(symbol.clone()))?;
-                        let total = TokenAmount::from_human(total_str, 8, Some(symbol.clone()))
-                            .or_else(|_| free.clone() + locked.clone())?;
-
-                        if total.raw > alloy_primitives::U256::ZERO {
-                            balances.insert(
-                                symbol,
-                                Balance {
-                                    free,
-                                    locked,
-                                    total,
-                                },
-                            );
-                        }
-                    }
-                }
-            }
             ExchangeType::Coinbase => {
                 if let Some(accounts) = data["accounts"].as_array() {
                     for account in accounts {
@@ -567,27 +418,6 @@ impl ExchangeClient {
                     }
                 }
             }
-            ExchangeType::Kraken => {
-                if let Some(assets) = data["result"].as_object() {
-                    for (symbol, amount) in assets {
-                        let amount_str = amount.as_str().unwrap_or("0");
-                        let free = TokenAmount::from_human(amount_str, 8, Some(symbol.clone()))?;
-                        let locked = TokenAmount::from_human("0", 8, Some(symbol.clone()))?;
-                        let total = free.clone();
-
-                        if total.raw > alloy_primitives::U256::ZERO {
-                            balances.insert(
-                                symbol.clone(),
-                                Balance {
-                                    free,
-                                    locked,
-                                    total,
-                                },
-                            );
-                        }
-                    }
-                }
-            }
         }
         Ok(balances)
     }
@@ -603,7 +433,6 @@ impl ExchangeClient {
         let amount_str = amount.to_human().normalize().to_string();
         let price_str = price.normalize().to_string();
         let side_upper = side.to_uppercase();
-        let side_lower = side.to_lowercase();
         let (endpoint, params) = match self.exchange_type {
             ExchangeType::Binance => (
                 "/api/v3/order",
@@ -616,18 +445,6 @@ impl ExchangeClient {
                     "category": "spot", "symbol": symbol_clean, "side": side_upper,
                     "orderType": "Limit", "qty": amount_str, "price": price_str, "timeInForce": "IOC"
                 }).to_string()
-            ),
-            ExchangeType::Okx => (
-                "/api/v5/trade/order",
-                serde_json::json!({
-                    "instId": symbol_clean,
-                    "tdMode": "cash",
-                    "clOrdId": Self::client_order_id("arb"),
-                    "side": side_lower,
-                    "ordType": "ioc",
-                    "px": price_str,
-                    "sz": amount_str
-                }).to_string(),
             ),
             ExchangeType::Coinbase => (
                 "/orders",
@@ -643,17 +460,6 @@ impl ExchangeClient {
                         }
                     }
                 }).to_string(),
-            ),
-            ExchangeType::Kraken => (
-                "/0/private/AddOrder",
-                Self::encode_form(&[
-                    ("pair", symbol_clean),
-                    ("type", side_lower),
-                    ("ordertype", "limit".to_string()),
-                    ("volume", amount_str),
-                    ("price", price_str),
-                    ("timeinforce", "IOC".to_string()),
-                ]),
             ),
         };
 
@@ -698,18 +504,6 @@ impl ExchangeClient {
                 "a",
                 Some("result"),
             ),
-            ExchangeType::Okx => {
-                symbol_clean = symbol.replace("/", "-").to_uppercase();
-                (
-                    format!(
-                        "{}/api/v5/market/books?instId={}&sz={}",
-                        self.base_url, symbol_clean, limit
-                    ),
-                    "bids",
-                    "asks",
-                    Some("okx_data"),
-                )
-            }
             ExchangeType::Coinbase => {
                 symbol_clean = symbol.replace("/", "-").to_uppercase();
                 (
@@ -722,15 +516,6 @@ impl ExchangeClient {
                     Some("pricebook"),
                 )
             }
-            ExchangeType::Kraken => (
-                format!(
-                    "{}/0/public/Depth?pair={}&count={}",
-                    self.base_url, symbol_clean, limit
-                ),
-                "bids",
-                "asks",
-                Some("kraken_result"),
-            ),
         };
 
         self.rate_limiter
@@ -749,14 +534,7 @@ impl ExchangeClient {
             .map_err(|e| ArbError::SerializationError(e.to_string()))?;
 
         if let Some(path) = data_path {
-            data = match path {
-                "okx_data" => data["data"].get(0).cloned().unwrap_or_default(),
-                "kraken_result" => data["result"]
-                    .as_object()
-                    .and_then(|result| result.values().next().cloned())
-                    .unwrap_or_default(),
-                _ => data[path].clone(),
-            };
+            data = data[path].clone();
         }
 
         let bids = self.parse_levels(&data[bid_key])?;
@@ -772,9 +550,7 @@ impl ExchangeClient {
         match self.exchange_type {
             ExchangeType::Binance => self.stream_binance(symbol, callback).await,
             ExchangeType::Bybit => self.stream_bybit(symbol, callback).await,
-            ExchangeType::Okx | ExchangeType::Coinbase | ExchangeType::Kraken => {
-                Err(Self::unsupported_streaming(self.exchange_type))
-            }
+            ExchangeType::Coinbase => Err(Self::unsupported_streaming(self.exchange_type)),
         }
     }
 
@@ -859,20 +635,10 @@ impl ExchangeClient {
                 "/v5/order/cancel",
                 serde_json::json!({"category": "spot", "symbol": symbol_clean, "orderId": order_id}).to_string(),
             ),
-            ExchangeType::Okx => (
-                "POST",
-                "/api/v5/trade/cancel-order",
-                serde_json::json!({"instId": symbol_clean, "ordId": order_id}).to_string(),
-            ),
             ExchangeType::Coinbase => (
                 "POST",
                 "/orders/batch_cancel",
                 serde_json::json!({"order_ids": [order_id]}).to_string(),
-            ),
-            ExchangeType::Kraken => (
-                "POST",
-                "/0/private/CancelOrder",
-                Self::encode_form(&[("txid", order_id.to_string())]),
             ),
         };
 
@@ -884,9 +650,7 @@ impl ExchangeClient {
                 data["orderId"].as_str().is_some() || data["orderId"].as_u64().is_some()
             }
             ExchangeType::Bybit => data["retCode"].as_i64().unwrap_or(-1) == 0,
-            ExchangeType::Okx => data["data"][0]["sCode"].as_str().unwrap_or("-1") == "0",
             ExchangeType::Coinbase => data["results"][0]["success"].as_bool().unwrap_or(false),
-            ExchangeType::Kraken => data["result"]["count"].as_u64().unwrap_or(0) > 0,
         })
     }
 
@@ -895,43 +659,6 @@ impl ExchangeClient {
             HmacSha256::new_from_slice(self.config.secret.as_bytes()).expect("HMAC Error");
         mac.update(payload.as_bytes());
         hex::encode(mac.finalize().into_bytes())
-    }
-
-    fn sign_okx(
-        &self,
-        timestamp: &str,
-        method: &str,
-        request_path: &str,
-        body: &str,
-    ) -> Result<String, ArbError> {
-        let prehash = format!(
-            "{}{}{}{}",
-            timestamp,
-            method.to_uppercase(),
-            request_path,
-            body
-        );
-        let mut mac = HmacSha256::new_from_slice(self.config.secret.as_bytes())
-            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
-        mac.update(prehash.as_bytes());
-        Ok(general_purpose::STANDARD.encode(mac.finalize().into_bytes()))
-    }
-
-    fn sign_kraken(&self, endpoint: &str, nonce: &str, body: &str) -> Result<String, ArbError> {
-        let mut sha = Sha256::new();
-        sha.update(format!("{}{}", nonce, body).as_bytes());
-        let hash = sha.finalize();
-
-        let mut message = endpoint.as_bytes().to_vec();
-        message.extend_from_slice(&hash);
-
-        let secret = general_purpose::STANDARD
-            .decode(self.config.secret.trim())
-            .map_err(|e| ArbError::SerializationError(format!("Kraken secret decode: {}", e)))?;
-        let mut mac = HmacSha512::new_from_slice(&secret)
-            .map_err(|e| ArbError::SerializationError(e.to_string()))?;
-        mac.update(&message);
-        Ok(general_purpose::STANDARD.encode(mac.finalize().into_bytes()))
     }
 
     fn coinbase_jwt(&self, method: &str, request_path: &str) -> Result<String, ArbError> {
@@ -1052,10 +779,8 @@ impl ExchangeClient {
 
     fn normalize_symbol(&self, symbol: &str) -> String {
         let mut symbol = match self.exchange_type {
-            ExchangeType::Okx | ExchangeType::Coinbase => symbol.replace('/', "-"),
-            ExchangeType::Binance | ExchangeType::Bybit | ExchangeType::Kraken => {
-                symbol.replace('/', "")
-            }
+            ExchangeType::Coinbase => symbol.replace('/', "-"),
+            ExchangeType::Binance | ExchangeType::Bybit => symbol.replace('/', ""),
         };
         symbol = symbol.replace("WETH", "ETH").replace("WBTC", "BTC");
         symbol.to_uppercase()
@@ -1063,18 +788,6 @@ impl ExchangeClient {
 
     fn client_order_id(prefix: &str) -> String {
         format!("{}{}", prefix, Self::get_timestamp())
-    }
-
-    fn encode_form(params: &[(&str, String)]) -> String {
-        let mut serializer = url::form_urlencoded::Serializer::new(String::new());
-        for (key, value) in params {
-            serializer.append_pair(key, value);
-        }
-        serializer.finish()
-    }
-
-    fn okx_timestamp() -> String {
-        Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
     }
 
     fn nonce_hex() -> String {
@@ -1188,9 +901,7 @@ impl ExchangeClient {
         let endpoint = match self.exchange_type {
             ExchangeType::Binance => "/api/v3/time",
             ExchangeType::Bybit => "/v5/market/time",
-            ExchangeType::Okx => "/api/v5/public/time",
             ExchangeType::Coinbase => "/time",
-            ExchangeType::Kraken => "/0/public/SystemStatus",
         };
         let url = format!("{}{}", self.base_url, endpoint);
         let resp = self
@@ -1223,9 +934,7 @@ impl ExchangeClient {
         let d = match self.exchange_type {
             ExchangeType::Binance => data.clone(),
             ExchangeType::Bybit => data["result"].clone(),
-            ExchangeType::Okx => data["data"].get(0).cloned().unwrap_or_default(),
             ExchangeType::Coinbase => data["success_response"].clone(),
-            ExchangeType::Kraken => data["result"].clone(),
         };
 
         let id = match self.exchange_type {
@@ -1233,13 +942,7 @@ impl ExchangeClient {
                 Self::json_value_to_string(&d["orderId"])
                     .or_else(|| Self::json_value_to_string(&d["order_id"]))
             }
-            ExchangeType::Okx => Self::json_value_to_string(&d["ordId"])
-                .or_else(|| Self::json_value_to_string(&d["clOrdId"])),
             ExchangeType::Coinbase => Self::json_value_to_string(&d["order_id"]),
-            ExchangeType::Kraken => d["txid"]
-                .as_array()
-                .and_then(|ids| ids.first())
-                .and_then(Self::json_value_to_string),
         }
         .unwrap_or_default();
 
@@ -1300,13 +1003,6 @@ impl ExchangeClient {
         let avg_fill_price = response_price.or(price_hint).unwrap_or(Decimal::ZERO);
 
         let status = match self.exchange_type {
-            ExchangeType::Okx => {
-                if d["sCode"].as_str().unwrap_or("0") == "0" {
-                    "accepted".to_string()
-                } else {
-                    d["sMsg"].as_str().unwrap_or("rejected").to_lowercase()
-                }
-            }
             ExchangeType::Coinbase => {
                 if data["success"].as_bool().unwrap_or(true) {
                     "accepted".to_string()
@@ -1315,13 +1011,6 @@ impl ExchangeClient {
                         .as_str()
                         .unwrap_or("rejected")
                         .to_lowercase()
-                }
-            }
-            ExchangeType::Kraken => {
-                if !id.is_empty() {
-                    "accepted".to_string()
-                } else {
-                    "unknown".to_string()
                 }
             }
             ExchangeType::Binance | ExchangeType::Bybit => d["status"]
@@ -1363,7 +1052,6 @@ impl ExchangeClient {
         let symbol_clean = self.normalize_symbol(symbol);
         let amount_str = amount.to_human().normalize().to_string();
         let side_upper = side.to_uppercase();
-        let side_lower = side.to_lowercase();
         let (endpoint, params) = match self.exchange_type {
             ExchangeType::Binance => (
                 "/api/v3/order",
@@ -1377,19 +1065,6 @@ impl ExchangeClient {
                 serde_json::json!({
                     "category": "spot", "symbol": symbol_clean, "side": side_upper,
                     "orderType": "Market", "qty": amount_str
-                })
-                .to_string(),
-            ),
-            ExchangeType::Okx => (
-                "/api/v5/trade/order",
-                serde_json::json!({
-                    "instId": symbol_clean,
-                    "tdMode": "cash",
-                    "clOrdId": Self::client_order_id("arb"),
-                    "side": side_lower,
-                    "ordType": "market",
-                    "sz": amount_str,
-                    "tgtCcy": "base_ccy"
                 })
                 .to_string(),
             ),
@@ -1407,15 +1082,6 @@ impl ExchangeClient {
                     }
                 })
                 .to_string(),
-            ),
-            ExchangeType::Kraken => (
-                "/0/private/AddOrder",
-                Self::encode_form(&[
-                    ("pair", symbol_clean),
-                    ("type", side_lower),
-                    ("ordertype", "market".to_string()),
-                    ("volume", amount_str),
-                ]),
             ),
         };
 
@@ -1462,26 +1128,6 @@ mod private_api_tests {
             ws_url: "wss://example.com".to_string(),
             rate_limiter: RateLimiter::new(1),
         }
-    }
-
-    #[test]
-    fn kraken_signature_matches_official_example() {
-        let client = test_client(
-            ExchangeType::Kraken,
-            "kQH5HW/8p1uGOVjbgWA7FunAmGO8lsSUXNsu3eow76sz84Q18fWxnyRzBHCd3pd5nE9qa99HAZtuZuj6F1huXg==",
-        );
-        let signature = client
-            .sign_kraken(
-                "/0/private/AddOrder",
-                "1616492376594",
-                "nonce=1616492376594&ordertype=limit&pair=XBTUSD&price=37500&type=buy&volume=1.25",
-            )
-            .unwrap();
-
-        assert_eq!(
-            signature,
-            "4/dpxb3iT4tp/ZCVEwSnEsLxx0bqyhLpdfOpc6fn7OR8+UClSV5n9E6aSS8MPtnRfp32bAb0nmbRn6H8ndwLUQ=="
-        );
     }
 
     #[test]
